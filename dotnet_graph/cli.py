@@ -414,7 +414,7 @@ def update() -> None:
     if is_uvx and shutil.which("uvx"):
         click.echo(f"Current version: {__version__}")
         click.echo("Upgrading via uvx ...")
-        result = subprocess.run(["uvx", "tool", "upgrade", "dotnet-graph"])
+        result = subprocess.run(["uv", "tool", "upgrade", "dotnet-graph"])
         if result.returncode != 0:
             raise SystemExit(result.returncode)
     else:
