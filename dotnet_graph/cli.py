@@ -17,14 +17,21 @@ def cli() -> None:
 @cli.command()
 @click.option("--root", required=True, type=click.Path(exists=True, file_okay=False), help="Solution root directory")
 @click.option("--db", default=None, type=click.Path(), help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
-def build(root: str, db: Optional[str]) -> None:
-    """Build (or rebuild) the knowledge graph."""
+@click.option("--full", "force_full", is_flag=True, default=False, help="Force a full rebuild instead of incremental")
+def build(root: str, db: Optional[str], force_full: bool) -> None:
+    """Build (or rebuild) the knowledge graph.
+
+    By default runs an incremental build — only re-analyzes files whose
+    content has changed since the last build. Use --full to force a complete
+    rebuild from scratch.
+    """
     from dotnet_graph.builder import build as _build
 
     root_path = Path(root).resolve()
     db_path = Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
-    click.echo(f"Building graph for {root_path} → {db_path}")
-    _build(root_path, db_path, verbose=True)
+    mode = "full" if force_full else "incremental"
+    click.echo(f"Building graph [{mode}] for {root_path} → {db_path}")
+    _build(root_path, db_path, verbose=True, incremental=not force_full)
 
 
 @cli.command()

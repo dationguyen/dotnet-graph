@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bisect
+import hashlib
 import json
 import os
 import re
@@ -10,11 +11,12 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from filelock import FileLock, Timeout
 
-from .db import init_db, count
+from .db import init_db, open_db, count
 
 XAML_CLASS_PAT = re.compile(r'x:Class="([\w.]+)"')
 
@@ -66,13 +68,26 @@ def _ensure_analyzer(verbose: bool = False) -> list[str]:
     return ["dotnet", str(dll)]
 
 
-def _run_roslyn(root: Path, verbose: bool = False) -> list[dict]:
+def _run_roslyn(
+    root: Path,
+    verbose: bool = False,
+    files_to_analyze: list[Path] | None = None,
+) -> list[dict]:
     cmd = _ensure_analyzer(verbose=verbose)
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         tmp = f.name
+
+    extra_args: list[str] = []
+    files_list_tmp: str | None = None
+    if files_to_analyze is not None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as fl:
+            fl.write("\n".join(str(p) for p in files_to_analyze))
+            files_list_tmp = fl.name
+        extra_args = ["--files-list", files_list_tmp]
+
     try:
         result = subprocess.run(
-            [*cmd, "--root", str(root), "--output", tmp],
+            [*cmd, "--root", str(root), "--output", tmp, *extra_args],
             capture_output=True, text=True, timeout=600,
         )
         if verbose and result.stderr:
@@ -84,6 +99,8 @@ def _run_roslyn(root: Path, verbose: bool = False) -> list[dict]:
             return json.load(f)
     finally:
         Path(tmp).unlink(missing_ok=True)
+        if files_list_tmp:
+            Path(files_list_tmp).unlink(missing_ok=True)
 
 
 # ── Project discovery ──────────────────────────────────────────────────────────
@@ -405,9 +422,115 @@ def _build_features(conn: sqlite3.Connection, verbose: bool = False) -> None:
         print(f"  Built {len(rows)} features from ViewModels.")
 
 
+# ── Incremental build helpers ──────────────────────────────────────────────────
+
+def _is_analyzable_cs(path: Path, root: Path) -> bool:
+    rel_parts = path.relative_to(root).parts
+    if any(p in ("obj", "bin") for p in rel_parts):
+        return False
+    name = path.name
+    return not (name.endswith(".g.cs") or ".designer." in name or ".g.i." in name)
+
+
+def _hash_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _compute_all_hashes(root: Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for cs in root.rglob("*.cs"):
+        if _is_analyzable_cs(cs, root):
+            rel = str(cs.relative_to(root)).replace(os.sep, "/")
+            result[rel] = _hash_file(cs)
+    return result
+
+
+def _load_stored_hashes(conn: sqlite3.Connection) -> dict[str, str]:
+    try:
+        return {row[0]: row[1] for row in conn.execute("SELECT path, sha256 FROM file_hashes")}
+    except sqlite3.OperationalError:
+        return {}
+
+
+def _delete_file_data(conn: sqlite3.Connection, rel_paths: list[str], verbose: bool = False) -> None:
+    if not rel_paths:
+        return
+    cur = conn.cursor()
+    ph = ",".join("?" * len(rel_paths))
+    cur.execute(f"SELECT id FROM files WHERE path IN ({ph})", rel_paths)
+    file_ids = [row[0] for row in cur.fetchall()]
+    if not file_ids:
+        return
+    fph = ",".join("?" * len(file_ids))
+    cur.execute(f"SELECT full_name FROM types WHERE file_id IN ({fph})", file_ids)
+    type_names = [row[0] for row in cur.fetchall() if row[0]]
+    for table in (
+        "method_calls", "constructor_injections", "registrations",
+        "endpoints", "field_declarations", "properties", "methods", "usings", "types",
+    ):
+        cur.execute(f"DELETE FROM {table} WHERE file_id IN ({fph})", file_ids)
+    if type_names:
+        tph = ",".join("?" * len(type_names))
+        cur.execute(f"DELETE FROM relationships WHERE from_type IN ({tph})", type_names)
+    cur.execute(f"DELETE FROM files WHERE path IN ({ph})", rel_paths)
+    if verbose:
+        print(f"  Removed {len(file_ids)} files, {len(type_names)} types from index.")
+
+
+def _ingest_xaml_and_config(
+    root: Path,
+    projects: list[dict],
+    project_ids: dict[str, int],
+    conn: sqlite3.Connection,
+    verbose: bool = False,
+) -> None:
+    xaml_count = 0
+    for proj in projects:
+        pid = project_ids[proj["path"]]
+        for xf in proj["dir"].rglob("*.xaml"):
+            if "obj" not in xf.parts and "bin" not in xf.parts:
+                _process_xaml(xf, root, pid, conn)
+                xaml_count += 1
+    if verbose:
+        print(f"  Processed {xaml_count} XAML files.")
+    json_count = 0
+    for jf in root.rglob("appConfiguration*.json"):
+        if "obj" not in jf.parts and "bin" not in jf.parts:
+            _process_json_config(jf, root, conn)
+            json_count += 1
+    if verbose:
+        print(f"  Processed {json_count} config JSON files.")
+
+
+def _store_hashes(conn: sqlite3.Connection, all_hashes: dict[str, str]) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.executemany(
+        "INSERT OR REPLACE INTO file_hashes (path, sha256, analyzed_at) VALUES (?,?,?)",
+        [(p, h, now) for p, h in all_hashes.items()],
+    )
+
+
+def _upsert_projects(root: Path, conn: sqlite3.Connection) -> tuple[list[dict], dict[str, int]]:
+    projects = _collect_projects(root)
+    cur = conn.cursor()
+    project_ids: dict[str, int] = {}
+    for proj in projects:
+        cur.execute(
+            "INSERT OR IGNORE INTO projects (name, path, domain, platform) VALUES (?,?,?,?)",
+            (proj["name"], proj["path"], proj["domain"], proj["platform"]),
+        )
+        pid = cur.execute("SELECT id FROM projects WHERE path=?", (proj["path"],)).fetchone()[0]
+        project_ids[proj["path"]] = pid
+    return projects, project_ids
+
+
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def build(root: Path, db_path: Path, verbose: bool = True) -> None:
+def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = True) -> None:
     lock_path = db_path.with_suffix(".lock")
     lock = FileLock(str(lock_path), timeout=0)
     try:
@@ -420,86 +543,120 @@ def build(root: Path, db_path: Path, verbose: bool = True) -> None:
 
     conn = None
     tmp_path = db_path.with_suffix(".db.tmp")
-    tmp_path.unlink(missing_ok=True)
 
     try:
-        conn = init_db(tmp_path)
+        all_hashes = _compute_all_hashes(root)
 
-        # 1. Discover projects
-        projects = _collect_projects(root)
-        if verbose:
-            print(f"Found {len(projects)} projects.")
+        if incremental and db_path.exists():
+            # ── Incremental path ──────────────────────────────────────────────
+            conn = open_db(db_path)
+            stored = _load_stored_hashes(conn)
+            changed = [p for p, h in all_hashes.items() if p in stored and stored[p] != h]
+            new_files = [p for p in all_hashes if p not in stored]
+            deleted = [p for p in stored if p not in all_hashes]
+            to_analyze = changed + new_files
 
-        cur = conn.cursor()
-        project_ids: dict[str, int] = {}
-        for proj in projects:
-            cur.execute(
-                "INSERT OR IGNORE INTO projects (name, path, domain, platform) VALUES (?,?,?,?)",
-                (proj["name"], proj["path"], proj["domain"], proj["platform"]),
-            )
-            pid = cur.execute("SELECT id FROM projects WHERE path=?", (proj["path"],)).fetchone()[0]
-            project_ids[proj["path"]] = pid
-        conn.commit()
+            if not to_analyze and not deleted:
+                if verbose:
+                    print("Graph is up to date — nothing to rebuild.")
+                conn.close()
+                conn = None
+                return
 
-        # 2. Run Roslyn analyzer
-        if verbose:
-            print("Running Roslyn analyzer...")
-        file_data_list = _run_roslyn(root, verbose=verbose)
-        if verbose:
-            print(f"  Roslyn analyzed {len(file_data_list)} files.")
+            if verbose:
+                print(f"Incremental: {len(to_analyze)} changed/new, {len(deleted)} deleted.")
 
-        _ingest_roslyn(file_data_list, root, projects, project_ids, conn, verbose=verbose)
-        conn.commit()
-        if verbose:
-            print("  Ingested C# data.")
+            _delete_file_data(conn, changed + deleted, verbose=verbose)
+            conn.commit()
 
-        # 3. XAML + config JSON
-        xaml_count = 0
-        for proj in projects:
-            pid = project_ids[proj["path"]]
-            for xf in proj["dir"].rglob("*.xaml"):
-                if "obj" not in xf.parts and "bin" not in xf.parts:
-                    _process_xaml(xf, root, pid, conn)
-                    xaml_count += 1
-        if verbose:
-            print(f"  Processed {xaml_count} XAML files.")
+            projects, project_ids = _upsert_projects(root, conn)
+            conn.commit()
 
-        json_count = 0
-        for jf in root.rglob("appConfiguration*.json"):
-            if "obj" not in jf.parts and "bin" not in jf.parts:
-                _process_json_config(jf, root, conn)
-                json_count += 1
-        if verbose:
-            print(f"  Processed {json_count} config JSON files.")
-        conn.commit()
+            if to_analyze:
+                if verbose:
+                    print(f"Running Roslyn on {len(to_analyze)} files...")
+                file_data_list = _run_roslyn(
+                    root, verbose=verbose, files_to_analyze=[root / p for p in to_analyze]
+                )
+                _ingest_roslyn(file_data_list, root, projects, project_ids, conn, verbose=verbose)
+                conn.commit()
 
-        # 4. Post-processing
-        if verbose:
-            print("Resolving relationships...")
-        _resolve_relationships(conn, verbose=verbose)
-        if verbose:
-            print("Building features index...")
-        _build_features(conn, verbose=verbose)
-        conn.commit()
+            conn.execute("DELETE FROM xaml_views")
+            conn.execute("DELETE FROM config_keys")
+            _ingest_xaml_and_config(root, projects, project_ids, conn, verbose=verbose)
+            conn.commit()
 
-        # 5. Summary
-        tables = [
-            "projects", "files", "types", "methods", "properties",
-            "relationships", "usings", "xaml_views", "registrations",
-            "endpoints", "config_keys", "features",
-            "constructor_injections", "field_declarations", "method_calls",
-        ]
-        if verbose:
-            print("\nGraph complete:")
-            for t in tables:
-                print(f"  {t:<22}: {count(conn, t):>6,}")
+            conn.execute("DELETE FROM features")
+            if verbose:
+                print("Resolving relationships...")
+            _resolve_relationships(conn, verbose=verbose)
+            _build_features(conn, verbose=verbose)
+            conn.commit()
 
-        conn.close()
-        conn = None
-        tmp_path.replace(db_path)
-        if verbose:
-            mb = db_path.stat().st_size / 1024 / 1024
-            print(f"  DB: {db_path}  ({mb:.1f} MB)")
+            _store_hashes(conn, all_hashes)
+            if deleted:
+                dph = ",".join("?" * len(deleted))
+                conn.execute(f"DELETE FROM file_hashes WHERE path IN ({dph})", deleted)
+            conn.commit()
+
+            conn.close()
+            conn = None
+            if verbose:
+                mb = db_path.stat().st_size / 1024 / 1024
+                print(f"  DB: {db_path}  ({mb:.1f} MB)")
+
+        else:
+            # ── Full build path ──────────────────────────────────────────────
+            tmp_path.unlink(missing_ok=True)
+            conn = init_db(tmp_path)
+
+            projects, project_ids = _upsert_projects(root, conn)
+            if verbose:
+                print(f"Found {len(projects)} projects.")
+            conn.commit()
+
+            if verbose:
+                print("Running Roslyn analyzer...")
+            file_data_list = _run_roslyn(root, verbose=verbose)
+            if verbose:
+                print(f"  Roslyn analyzed {len(file_data_list)} files.")
+
+            _ingest_roslyn(file_data_list, root, projects, project_ids, conn, verbose=verbose)
+            conn.commit()
+            if verbose:
+                print("  Ingested C# data.")
+
+            _ingest_xaml_and_config(root, projects, project_ids, conn, verbose=verbose)
+            conn.commit()
+
+            if verbose:
+                print("Resolving relationships...")
+            _resolve_relationships(conn, verbose=verbose)
+            if verbose:
+                print("Building features index...")
+            _build_features(conn, verbose=verbose)
+            conn.commit()
+
+            _store_hashes(conn, all_hashes)
+            conn.commit()
+
+            tables = [
+                "projects", "files", "types", "methods", "properties",
+                "relationships", "usings", "xaml_views", "registrations",
+                "endpoints", "config_keys", "features",
+                "constructor_injections", "field_declarations", "method_calls",
+            ]
+            if verbose:
+                print("\nGraph complete:")
+                for t in tables:
+                    print(f"  {t:<22}: {count(conn, t):>6,}")
+
+            conn.close()
+            conn = None
+            tmp_path.replace(db_path)
+            if verbose:
+                mb = db_path.stat().st_size / 1024 / 1024
+                print(f"  DB: {db_path}  ({mb:.1f} MB)")
 
     except Exception:
         try:

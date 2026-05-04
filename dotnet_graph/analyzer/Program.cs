@@ -9,6 +9,7 @@ internal class Program
     {
         string? root = null;
         string? output = null;
+        string? filesList = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -20,8 +21,11 @@ internal class Program
                 case "--output" when i + 1 < args.Length:
                     output = args[++i];
                     break;
+                case "--files-list" when i + 1 < args.Length:
+                    filesList = args[++i];
+                    break;
                 case "--help":
-                    Console.Error.WriteLine("Usage: RoslynAnalyzer --root <directory> [--output <file>]");
+                    Console.Error.WriteLine("Usage: RoslynAnalyzer --root <directory> [--output <file>] [--files-list <file>]");
                     return 0;
             }
         }
@@ -39,8 +43,21 @@ internal class Program
             return 1;
         }
 
-        var files = DiscoverCsFiles(rootDir);
-        Console.Error.WriteLine($"Analyzing {files.Count} C# files...");
+        List<FileInfo> files;
+        if (filesList != null)
+        {
+            files = File.ReadAllLines(filesList)
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(l => new FileInfo(l.Trim()))
+                .Where(f => f.Exists)
+                .ToList();
+            Console.Error.WriteLine($"Analyzing {files.Count} changed C# files...");
+        }
+        else
+        {
+            files = DiscoverCsFiles(rootDir);
+            Console.Error.WriteLine($"Analyzing {files.Count} C# files...");
+        }
 
         var results = new List<FileData>(files.Count);
         int errors = 0;
