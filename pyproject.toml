@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dotnet-graph"
+version = "0.1.0"
+description = "Roslyn-powered knowledge graph for .NET/C# codebases with MCP server"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+keywords = ["mcp", "dotnet", "csharp", "roslyn", "knowledge-graph", "code-analysis", "claude"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "fastmcp>=0.1.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+dotnet-graph = "dotnet_graph.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dotnet_graph"]

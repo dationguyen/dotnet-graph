@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.eggs/
+*.egg
+
+# Compiled Roslyn analyzer cache
+.dotnet-graph-cache/
+
+# C# build artifacts
+dotnet_graph/analyzer/bin/
+dotnet_graph/analyzer/obj/
+
+# SQLite databases (project-local)
+*.db
+*.db-wal
+*.db-shm
