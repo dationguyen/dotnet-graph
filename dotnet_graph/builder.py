@@ -103,7 +103,8 @@ def _infer_domain(rel_path: str) -> tuple[str, str]:
 def _collect_projects(root: Path) -> list[dict]:
     projects = []
     for csproj in root.rglob("*.csproj"):
-        if "obj" in csproj.parts or "bin" in csproj.parts:
+        parts = csproj.parts
+        if any(p in ("obj", "bin") or p.startswith(".") for p in parts[len(root.parts):]):
             continue
         rel = str(csproj.relative_to(root))
         domain, platform = _infer_domain(rel)
