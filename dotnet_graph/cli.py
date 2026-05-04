@@ -277,10 +277,10 @@ def obsidian(root: Optional[str], db: Optional[str], vault: Optional[str]) -> No
               help="Server host (HTTP transport only)")
 @click.option("--port", default=8000, show_default=True, type=int,
               help="Server port (HTTP transport only)")
-@click.option("--scope", default="project",
+@click.option("--scope", default="local",
               type=click.Choice(["project", "local", "user"]), show_default=True,
-              help="Claude Code MCP scope: project=.claude/settings.json, "
-                   "local=git-ignored, user=~/.claude.json")
+              help="Claude Code MCP scope: local=this project (git-ignored), "
+                   "project=shared with team, user=all your projects")
 @click.option("--skip-build", is_flag=True, default=False,
               help="Skip building the knowledge graph")
 def install(root: Optional[str], db: Optional[str], transport: str,
@@ -344,10 +344,11 @@ def _do_build(root_path: Path, db_path: Path) -> None:
 def _try_claude_mcp_add(claude: str, root_path: Path, db_path: Path, scope: str) -> bool:
     """Run `claude mcp add` and return True on success."""
     cmd = [
-        claude, "mcp", "add", "dotnet-graph",
+        claude, "mcp", "add",
         "-s", scope,
+        "dotnet-graph",
         "--",
-        "uvx", "dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path),
+        "uvx", "dotnetgraph", "serve", "--root", str(root_path), "--db", str(db_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:
