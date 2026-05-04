@@ -19,12 +19,14 @@ dotnet-graph install [OPTIONS]
 | `--transport stdio\|http` | `stdio` | Transport protocol |
 | `--port` | `8000` | Port (HTTP only) |
 | `--skip-build` | off | Skip building the graph |
+| `--skip-claude-md` | off | Skip patching CLAUDE.md |
 
 **What it does:**
 1. Detects solution root from CWD
-2. Builds the knowledge graph (incremental if DB exists, full if not)
-3. Registers with Claude Code via `claude mcp add` if the CLI is present — DB stored in `.claude/.dotnet-graph/knowledge.db`
-4. Writes `.mcp.json` as a fallback for other MCP tools — DB stored in `.dotnet-graph/knowledge.db`
+2. Builds the knowledge graph — DB always at `<root>/.dotnet-graph/knowledge.db`
+3. Registers with Claude Code via `claude mcp add` if the CLI is present
+4. Writes `.mcp.json` as a fallback for other MCP clients
+5. Patches `CLAUDE.md` with dotnet-graph tool instructions so Claude knows how to use it
 
 **Scopes for Claude Code:**
 
