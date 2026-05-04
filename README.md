@@ -1,6 +1,12 @@
 # dotnetgraph
 
-Roslyn-powered knowledge graph for .NET/C# codebases. Indexes your solution into a structured SQLite database and exposes it over MCP (for Claude Code) or a REST API (for anything else).
+[![PyPI](https://img.shields.io/pypi/v/dotnetgraph)](https://pypi.org/project/dotnetgraph/)
+[![Python](https://img.shields.io/pypi/pyversions/dotnetgraph)](https://pypi.org/project/dotnetgraph/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+Ask Claude Code *"who injects `AuthService`?"* or *"what calls `ValidateToken`?"* and get answers backed by real Roslyn AST analysis — not guesswork.
+
+dotnetgraph indexes your .NET solution into a structured SQLite database and exposes it over MCP (for Claude Code) or a REST API (for anything else).
 
 ## Requirements
 
@@ -11,7 +17,12 @@ Roslyn-powered knowledge graph for .NET/C# codebases. Indexes your solution into
 
 ```bash
 pip install dotnetgraph
-# or: uvx dotnetgraph install   (zero local install)
+```
+
+Or run without installing via [uv](https://docs.astral.sh/uv/):
+
+```bash
+uvx dotnetgraph
 ```
 
 ## Setup
@@ -23,6 +34,8 @@ dotnet-graph install
 ```
 
 This auto-detects your solution root, builds the knowledge graph, registers with Claude Code via `claude mcp add`, and writes `.mcp.json` as a fallback. Restart Claude Code and you're done.
+
+> Subsequent builds are incremental — only changed files are re-analyzed. Force a full rebuild with `dotnet-graph build --full`.
 
 ## What you get in Claude Code
 
@@ -38,15 +51,6 @@ get_endpoints        → HTTP endpoints
 get_features         → ViewModel-centric feature index
 search               → keyword search across everything
 build_graph          → trigger a rebuild from inside the agent
-```
-
-## Keeping the graph fresh
-
-Subsequent builds are incremental — only changed files are re-analyzed:
-
-```bash
-dotnet-graph build          # incremental (default)
-dotnet-graph build --full   # force full rebuild
 ```
 
 ## Updating
