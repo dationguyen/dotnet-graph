@@ -149,6 +149,12 @@ CREATE TABLE IF NOT EXISTS method_calls (
     line            INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS file_hashes (
+    path        TEXT PRIMARY KEY,
+    sha256      TEXT NOT NULL,
+    analyzed_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_types_name      ON types(name);
 CREATE INDEX IF NOT EXISTS idx_types_full_name ON types(full_name);
 CREATE INDEX IF NOT EXISTS idx_rel_from        ON relationships(from_type);

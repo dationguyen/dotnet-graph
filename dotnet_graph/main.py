@@ -57,7 +57,13 @@ register_query_tools(mcp, _get_db)
 register_build_tools(mcp, _get_db_path)
 
 
-def serve(root: Optional[str] = None, db: Optional[str] = None) -> None:
+def serve(
+    root: Optional[str] = None,
+    db: Optional[str] = None,
+    transport: str = "stdio",
+    host: str = "0.0.0.0",
+    port: int = 8000,
+) -> None:
     global _db_path
 
     if db:
@@ -65,4 +71,9 @@ def serve(root: Optional[str] = None, db: Optional[str] = None) -> None:
     elif root:
         _db_path = Path(root).resolve() / ".dotnet-graph" / "knowledge.db"
 
-    mcp.run()
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        import sys
+        print(f"Starting MCP server on http://{host}:{port}/sse", file=sys.stderr)
+        mcp.run(transport="sse", host=host, port=port)
