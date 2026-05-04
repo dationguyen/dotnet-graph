@@ -50,8 +50,10 @@ find_callers         → who calls this method across the codebase
 get_di_registrations → MvvmCross / DI registration lifetimes
 get_endpoints        → HTTP endpoints
 get_features         → ViewModel-centric feature index
+get_stats            → build metadata and row counts for the knowledge graph
 search               → keyword search across everything
 build_graph          → trigger a rebuild from inside the agent
+build_obsidian_vault → generate an Obsidian vault with WikiLinks for visual graph exploration
 ```
 
 ## Updating
@@ -59,6 +61,17 @@ build_graph          → trigger a rebuild from inside the agent
 ```bash
 dotnet-graph update
 ```
+
+## Development
+
+```bash
+git clone https://github.com/dationguyen/dotnet-graph
+cd dotnet-graph
+uv sync --extra dev
+uv run --with pytest --with httpx pytest tests/integration_test.py -v
+```
+
+Requires .NET SDK 8+ for the Roslyn analyzer.
 
 ---
 
