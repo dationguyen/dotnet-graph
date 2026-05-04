@@ -333,14 +333,30 @@ def register_query_tools(mcp, get_db: Callable[[], sqlite3.Connection]) -> None:
 
     @mcp.tool()
     def get_stats() -> str:
-        """Show knowledge graph statistics (row counts per table)."""
+        """Show knowledge graph statistics: build metadata and row counts per table."""
         conn = get_db()
+
+        lines = ["**Graph statistics:**\n"]
+
+        try:
+            meta = {row[0]: row[1] for row in conn.execute("SELECT key, value FROM build_meta")}
+            if meta:
+                lines.append("### Build info")
+                lines.append(f"- last built : {meta.get('last_built_at', '—')}")
+                lines.append(f"- mode       : {meta.get('build_mode', '—')}")
+                lines.append(f"- analyzed   : {meta.get('files_analyzed', '—')} / {meta.get('total_files', '—')} files")
+                lines.append(f"- duration   : {meta.get('duration_seconds', '—')}s")
+                lines.append(f"- version    : {meta.get('tool_version', '—')}")
+                lines.append("")
+        except Exception:
+            pass
+
         tables = [
             "projects", "files", "types", "methods", "properties",
             "relationships", "registrations", "endpoints", "config_keys",
             "features", "constructor_injections", "field_declarations", "method_calls",
         ]
-        lines = ["**Graph statistics:**\n"]
+        lines.append("### Row counts")
         for t in tables:
             n = _count(conn, t)
             lines.append(f"- {t:<22}: {n:>6,}")
