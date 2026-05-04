@@ -21,6 +21,8 @@ dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "filelock>=3.12",
+    "fastapi>=0.100",
+    "uvicorn>=0.23",
 ]
 
 [project.scripts]

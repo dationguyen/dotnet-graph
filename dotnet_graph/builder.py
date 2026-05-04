@@ -585,6 +585,14 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             if not to_analyze and not deleted:
                 if verbose:
                     print("Graph is up to date — nothing to rebuild.")
+                _store_build_meta(
+                    conn,
+                    mode="incremental",
+                    files_analyzed=0,
+                    total_files=len(all_hashes),
+                    duration_s=time.monotonic() - start,
+                )
+                conn.commit()
                 conn.close()
                 conn = None
                 return
@@ -691,6 +699,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
                 for t in tables:
                     print(f"  {t:<22}: {count(conn, t):>6,}")
 
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             conn.close()
             conn = None
             tmp_path.replace(db_path)
