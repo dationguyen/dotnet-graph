@@ -15,15 +15,27 @@ from .db import open_db
 from .tools import register_query_tools, register_build_tools
 
 _db_path: Path | None = None
+_conn: sqlite3.Connection | None = None
+_conn_mtime: float = 0.0
 
 
 def _get_db() -> sqlite3.Connection:
+    global _conn, _conn_mtime
     if _db_path is None or not _db_path.exists():
+        if _conn is not None:
+            _conn.close()
+            _conn = None
         raise RuntimeError(
             "No knowledge graph found. Run `dotnet-graph build --root <path>` first, "
             "or start the server with `--db <path>`."
         )
-    return open_db(_db_path)
+    current_mtime = _db_path.stat().st_mtime
+    if _conn is None or current_mtime != _conn_mtime:
+        if _conn is not None:
+            _conn.close()
+        _conn = open_db(_db_path)
+        _conn_mtime = current_mtime
+    return _conn
 
 
 def _get_db_path() -> Path | None:

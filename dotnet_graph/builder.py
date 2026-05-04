@@ -38,7 +38,10 @@ def _ensure_analyzer(verbose: bool = False) -> list[str]:
     needs_build = not stamp.exists()
     if not needs_build:
         stamp_mtime = stamp.stat().st_mtime
-        needs_build = any(f.stat().st_mtime > stamp_mtime for f in src.rglob("*.cs"))
+        needs_build = any(
+            f.stat().st_mtime > stamp_mtime
+            for f in (*src.rglob("*.cs"), *src.rglob("*.csproj"))
+        )
 
     if needs_build:
         out.mkdir(parents=True, exist_ok=True)
@@ -137,6 +140,7 @@ def _ingest_roslyn(
     projects: list[dict],
     project_ids: dict[str, int],
     conn: sqlite3.Connection,
+    verbose: bool = False,
 ) -> None:
     cur = conn.cursor()
 
@@ -235,6 +239,8 @@ def _ingest_roslyn(
         proj = _file_to_project(str(root / rel_path), projects)
         project_id = project_ids.get(proj["path"]) if proj else None
         if project_id is None:
+            if verbose:
+                print(f"  [skip] {rel_path} — no matching project", file=sys.stderr)
             continue
 
         cur.execute(
@@ -255,7 +261,8 @@ def _ingest_roslyn(
 def _process_xaml(path: Path, root: Path, project_id: int, conn: sqlite3.Connection) -> None:
     try:
         text = path.read_text(encoding="utf-8-sig", errors="replace")
-    except Exception:
+    except Exception as exc:
+        print(f"  [warn] Cannot read XAML {path}: {exc}", file=sys.stderr)
         return
     m = XAML_CLASS_PAT.search(text)
     if not m:
@@ -282,7 +289,8 @@ def _flatten_json(obj: dict, prefix: str = "") -> list[tuple[str, str]]:
 def _process_json_config(path: Path, root: Path, conn: sqlite3.Connection) -> None:
     try:
         obj = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
-    except Exception:
+    except Exception as exc:
+        print(f"  [warn] Cannot parse config {path}: {exc}", file=sys.stderr)
         return
     name = path.name.lower()
     env = "Development" if "development" in name else "Production" if "production" in name else "shared"
@@ -295,7 +303,7 @@ def _process_json_config(path: Path, root: Path, conn: sqlite3.Connection) -> No
 
 # ── Post-processing ────────────────────────────────────────────────────────────
 
-def _resolve_relationships(conn: sqlite3.Connection) -> None:
+def _resolve_relationships(conn: sqlite3.Connection, verbose: bool = False) -> None:
     cur = conn.cursor()
     cur.execute("SELECT name, full_name FROM types")
     name_map: dict[str, list[str]] = {}
@@ -368,10 +376,11 @@ def _resolve_relationships(conn: sqlite3.Connection) -> None:
 
     if updates:
         cur.executemany("UPDATE relationships SET to_type = ? WHERE id = ?", updates)
-    print(f"  Resolved {len(updates)} relationships.")
+    if verbose:
+        print(f"  Resolved {len(updates)} relationships.")
 
 
-def _build_features(conn: sqlite3.Connection) -> None:
+def _build_features(conn: sqlite3.Connection, verbose: bool = False) -> None:
     rows = conn.execute("""
         SELECT t.name, t.full_name, p.domain, p.name
         FROM types t JOIN projects p ON t.project_id = p.id
@@ -389,76 +398,100 @@ def _build_features(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO features (name, domain, viewmodel, service, project) VALUES (?,?,?,?,?)",
             (feature, domain, full_name, svc[0] if svc else None, proj_name),
         )
-    print(f"  Built {len(rows)} features from ViewModels.")
+    if verbose:
+        print(f"  Built {len(rows)} features from ViewModels.")
 
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def build(root: Path, db_path: Path, verbose: bool = True) -> None:
-    if db_path.exists():
-        db_path.unlink()
+    tmp_path = db_path.with_suffix(".db.tmp")
+    tmp_path.unlink(missing_ok=True)
 
-    conn = init_db(db_path)
+    try:
+        conn = init_db(tmp_path)
 
-    # 1. Discover projects
-    projects = _collect_projects(root)
-    print(f"Found {len(projects)} projects.")
+        # 1. Discover projects
+        projects = _collect_projects(root)
+        if verbose:
+            print(f"Found {len(projects)} projects.")
 
-    cur = conn.cursor()
-    project_ids: dict[str, int] = {}
-    for proj in projects:
-        cur.execute(
-            "INSERT OR IGNORE INTO projects (name, path, domain, platform) VALUES (?,?,?,?)",
-            (proj["name"], proj["path"], proj["domain"], proj["platform"]),
-        )
-        pid = cur.execute("SELECT id FROM projects WHERE path=?", (proj["path"],)).fetchone()[0]
-        project_ids[proj["path"]] = pid
-    conn.commit()
+        cur = conn.cursor()
+        project_ids: dict[str, int] = {}
+        for proj in projects:
+            cur.execute(
+                "INSERT OR IGNORE INTO projects (name, path, domain, platform) VALUES (?,?,?,?)",
+                (proj["name"], proj["path"], proj["domain"], proj["platform"]),
+            )
+            pid = cur.execute("SELECT id FROM projects WHERE path=?", (proj["path"],)).fetchone()[0]
+            project_ids[proj["path"]] = pid
+        conn.commit()
 
-    # 2. Run Roslyn analyzer
-    print("Running Roslyn analyzer...")
-    file_data_list = _run_roslyn(root, verbose=verbose)
-    print(f"  Roslyn analyzed {len(file_data_list)} files.")
+        # 2. Run Roslyn analyzer
+        if verbose:
+            print("Running Roslyn analyzer...")
+        file_data_list = _run_roslyn(root, verbose=verbose)
+        if verbose:
+            print(f"  Roslyn analyzed {len(file_data_list)} files.")
 
-    _ingest_roslyn(file_data_list, root, projects, project_ids, conn)
-    conn.commit()
-    print(f"  Ingested C# data.")
+        _ingest_roslyn(file_data_list, root, projects, project_ids, conn, verbose=verbose)
+        conn.commit()
+        if verbose:
+            print("  Ingested C# data.")
 
-    # 3. XAML + config JSON
-    xaml_count = 0
-    for proj in projects:
-        pid = project_ids[proj["path"]]
-        for xf in proj["dir"].rglob("*.xaml"):
-            if "obj" not in xf.parts and "bin" not in xf.parts:
-                _process_xaml(xf, root, pid, conn)
-                xaml_count += 1
-    print(f"  Processed {xaml_count} XAML files.")
+        # 3. XAML + config JSON
+        xaml_count = 0
+        for proj in projects:
+            pid = project_ids[proj["path"]]
+            for xf in proj["dir"].rglob("*.xaml"):
+                if "obj" not in xf.parts and "bin" not in xf.parts:
+                    _process_xaml(xf, root, pid, conn)
+                    xaml_count += 1
+        if verbose:
+            print(f"  Processed {xaml_count} XAML files.")
 
-    json_count = 0
-    for jf in root.rglob("appConfiguration*.json"):
-        if "obj" not in jf.parts and "bin" not in jf.parts:
-            _process_json_config(jf, root, conn)
-            json_count += 1
-    print(f"  Processed {json_count} config JSON files.")
-    conn.commit()
+        json_count = 0
+        for jf in root.rglob("appConfiguration*.json"):
+            if "obj" not in jf.parts and "bin" not in jf.parts:
+                _process_json_config(jf, root, conn)
+                json_count += 1
+        if verbose:
+            print(f"  Processed {json_count} config JSON files.")
+        conn.commit()
 
-    # 4. Post-processing
-    print("Resolving relationships...")
-    _resolve_relationships(conn)
-    print("Building features index...")
-    _build_features(conn)
-    conn.commit()
+        # 4. Post-processing
+        if verbose:
+            print("Resolving relationships...")
+        _resolve_relationships(conn, verbose=verbose)
+        if verbose:
+            print("Building features index...")
+        _build_features(conn, verbose=verbose)
+        conn.commit()
 
-    # 5. Summary
-    tables = [
-        "projects", "files", "types", "methods", "properties",
-        "relationships", "usings", "xaml_views", "registrations",
-        "endpoints", "config_keys", "features",
-        "constructor_injections", "field_declarations", "method_calls",
-    ]
-    print("\nGraph complete:")
-    for t in tables:
-        print(f"  {t:<22}: {count(conn, t):>6,}")
-    mb = db_path.stat().st_size / 1024 / 1024
-    print(f"  DB: {db_path}  ({mb:.1f} MB)")
-    conn.close()
+        # 5. Summary
+        tables = [
+            "projects", "files", "types", "methods", "properties",
+            "relationships", "usings", "xaml_views", "registrations",
+            "endpoints", "config_keys", "features",
+            "constructor_injections", "field_declarations", "method_calls",
+        ]
+        if verbose:
+            print("\nGraph complete:")
+            for t in tables:
+                print(f"  {t:<22}: {count(conn, t):>6,}")
+
+        conn.close()
+        conn = None
+        tmp_path.replace(db_path)
+        if verbose:
+            mb = db_path.stat().st_size / 1024 / 1024
+            print(f"  DB: {db_path}  ({mb:.1f} MB)")
+
+    except Exception:
+        try:
+            if conn is not None:  # type: ignore[possibly-undefined]
+                conn.close()
+        except Exception:
+            pass
+        tmp_path.unlink(missing_ok=True)
+        raise

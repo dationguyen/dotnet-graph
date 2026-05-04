@@ -10,8 +10,9 @@ Each type becomes a markdown note with YAML frontmatter and WikiLinks for:
 from __future__ import annotations
 
 import re
-import sqlite3
 from pathlib import Path
+
+from .db import open_db
 
 
 def _safe_filename(name: str) -> str:
@@ -31,8 +32,7 @@ def _wikilink(full_name: str) -> str:
 
 def build_vault(db_path: Path, vault_path: Path, verbose: bool = False) -> int:
     """Build an Obsidian vault from knowledge.db. Returns notes written."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = open_db(db_path)
     vault_path.mkdir(parents=True, exist_ok=True)
 
     # ── Preload relationship maps (deduplicated) ───────────────────────────
