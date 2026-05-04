@@ -25,7 +25,7 @@ jobs:
           dotnet-version: "8.x"
 
       - name: Install package
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev]" pytest httpx
 
       - name: Run integration tests
-        run: python tests/integration_test.py
+        run: pytest tests/integration_test.py -v
