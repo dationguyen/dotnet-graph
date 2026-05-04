@@ -50,7 +50,7 @@ Restart Claude Code and you're done.
 
 > Subsequent builds are incremental — only changed files are re-analyzed. Force a full rebuild with `dotnet-graph build --full`.
 
-## What you get in Claude Code
+## MCP tools
 
 ```
 find_type            → locate any class or interface
@@ -64,15 +64,30 @@ get_endpoints        → HTTP endpoints
 get_features         → ViewModel-centric feature index
 get_stats            → build metadata and row counts for the knowledge graph
 search               → keyword search across everything
-build_graph          → trigger a rebuild from inside the agent
-build_obsidian_vault → generate an Obsidian vault with WikiLinks for visual graph exploration
+build_graph          → trigger an incremental or full rebuild from inside the agent
+build_obsidian_vault → export the graph as an Obsidian vault for visual exploration
 ```
 
-## Updating
+## Keeping the graph up to date
 
+Rebuilds are incremental by default — only changed files are re-analyzed.
+
+**From the terminal:**
 ```bash
-dotnet-graph update
+dotnet-graph build        # incremental
+dotnet-graph build --full # full rebuild
 ```
+
+**From inside the agent** — just ask Claude to run `build_graph`:
+```
+rebuild the graph
+```
+
+**Generate an Obsidian vault** for a visual map of your codebase:
+```bash
+dotnet-graph obsidian
+```
+Or ask Claude: *"export the graph to Obsidian"* — it calls `build_obsidian_vault` directly.
 
 ## Development
 
