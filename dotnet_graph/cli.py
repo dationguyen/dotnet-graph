@@ -41,7 +41,8 @@ def _check_for_update() -> None:
                 latest = json.loads(resp.read())["info"]["version"]
             cache_file.write_text(json.dumps({"checked_on": today, "latest": latest}))
 
-        if latest != __version__:
+        from packaging.version import Version
+        if Version(latest) > Version(__version__):
             click.echo(
                 f"  Update available: {__version__} → {latest}  "
                 f"Run: dotnet-graph update",

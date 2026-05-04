@@ -10,8 +10,8 @@ dotnet-graph indexes your .NET solution into a structured SQLite database and ex
 
 ## Requirements
 
-- Python 3.11+
-- .NET SDK 8+
+- Python 3.11+ — verify with `python --version`
+- .NET SDK 8+ — verify with `dotnet --version`
 
 ## Install
 
@@ -19,11 +19,7 @@ dotnet-graph indexes your .NET solution into a structured SQLite database and ex
 pip install dotnet-graph
 ```
 
-Or run without installing via [uv](https://docs.astral.sh/uv/):
-
-```bash
-uvx dotnet-graph
-```
+> **macOS with uv:** If `pip install` fails because uv intercepts it, use `uv tool install dotnet-graph` instead. This creates an isolated environment and puts `dotnet-graph` on your PATH.
 
 ## Setup
 
@@ -34,6 +30,11 @@ dotnet-graph install
 ```
 
 This auto-detects your solution root, builds the knowledge graph, registers with Claude Code via `claude mcp add`, and writes `.mcp.json` as a fallback. Restart Claude Code and you're done.
+
+> **Solution not at repo root?** Pass the path explicitly:
+> ```bash
+> dotnet-graph install --root /path/to/your/repo
+> ```
 
 > Subsequent builds are incremental — only changed files are re-analyzed. Force a full rebuild with `dotnet-graph build --full`.
 
