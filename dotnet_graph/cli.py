@@ -62,6 +62,28 @@ def status(root: str, db: Optional[str]) -> None:
 
 
 @cli.command()
+@click.option("--root", default=".", type=click.Path(exists=True, file_okay=False))
+@click.option("--db", default=None, type=click.Path(), help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
+@click.option("--vault", default=None, type=click.Path(), help="Output vault directory (default: <root>/.dotnet-graph/obsidian)")
+def obsidian(root: str, db: Optional[str], vault: Optional[str]) -> None:
+    """Generate an Obsidian vault from the knowledge graph."""
+    from dotnet_graph.obsidian import build_vault
+
+    root_path = Path(root).resolve()
+    db_path = Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+    vault_path = Path(vault).resolve() if vault else root_path / ".dotnet-graph" / "obsidian"
+
+    if not db_path.exists():
+        click.echo(f"No graph found at {db_path}. Run `dotnet-graph build --root {root}` first.")
+        return
+
+    click.echo(f"Generating Obsidian vault → {vault_path}")
+    n = build_vault(db_path, vault_path, verbose=True)
+    click.echo(f"Done: {n} notes written to {vault_path}")
+    click.echo("Open that folder in Obsidian and switch to Graph View.")
+
+
+@cli.command()
 @click.option("--root", default=".", type=click.Path(exists=True, file_okay=False), help="Project root to install into")
 @click.option("--db", default=None, type=click.Path(), help="Database path override")
 def install(root: str, db: Optional[str]) -> None:
