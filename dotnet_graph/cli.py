@@ -39,6 +39,11 @@ def _resolve_root(root: Optional[str]) -> Path:
 
 
 def _db_for(root_path: Path, db: Optional[str]) -> Path:
+    return Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+
+
+def _claude_db_for(root_path: Path, db: Optional[str]) -> Path:
+    """DB path when registering via Claude Code — lives inside .claude/."""
     return Path(db).resolve() if db else root_path / ".claude" / ".dotnet-graph" / "knowledge.db"
 
 
@@ -252,7 +257,17 @@ def install(root: Optional[str], db: Optional[str], transport: str,
       dotnet-graph install --skip-build     # config only, skip the graph build
     """
     root_path = _resolve_root(root)
-    db_path = _db_for(root_path, db)
+    claude = shutil.which("claude") if transport == "stdio" else None
+
+    # DB location depends on which tool we're registering with:
+    #   Claude Code → inside .claude/ (co-located with its own config)
+    #   everything else → project root .dotnet-graph/
+    if db:
+        db_path = Path(db).resolve()
+    elif claude:
+        db_path = _claude_db_for(root_path, None)
+    else:
+        db_path = _db_for(root_path, None)
 
     click.echo(f"Setting up dotnet-graph for {root_path}\n")
 
@@ -262,11 +277,13 @@ def install(root: Optional[str], db: Optional[str], transport: str,
         click.echo("")
 
     # Step 2: Claude Code native registration
-    if transport == "stdio":
-        _try_claude_mcp_add(root_path, scope)
+    if claude:
+        _try_claude_mcp_add(claude, root_path, db_path, scope)
+    else:
+        click.echo("[2/3] Claude Code CLI not found — skipping claude mcp add")
 
     # Step 3: .mcp.json fallback
-    _write_mcp_json(root_path, transport, host, port)
+    _write_mcp_json(root_path, db_path, transport, host, port)
 
     click.echo("\nDone. Restart your AI coding tool to pick up the new config.")
 
@@ -280,22 +297,17 @@ def _do_build(root_path: Path, db_path: Path) -> None:
     _build(root_path, db_path, verbose=True, incremental=incremental)
 
 
-def _try_claude_mcp_add(root_path: Path, scope: str) -> bool:
+def _try_claude_mcp_add(claude: str, root_path: Path, db_path: Path, scope: str) -> bool:
     """Run `claude mcp add` and return True on success."""
-    claude = shutil.which("claude")
-    if not claude:
-        click.echo("[2/3] Claude Code CLI not found — skipping claude mcp add")
-        return False
-
     cmd = [
         claude, "mcp", "add", "dotnet-graph",
         "-s", scope,
         "--",
-        "uvx", "dotnet-graph", "serve", "--root", str(root_path),
+        "uvx", "dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:
-        click.echo(f"[2/3] Registered with Claude Code (scope: {scope})")
+        click.echo(f"[2/3] Registered with Claude Code (scope: {scope}, db: {db_path})")
         return True
     else:
         click.echo(
@@ -306,7 +318,7 @@ def _try_claude_mcp_add(root_path: Path, scope: str) -> bool:
         return False
 
 
-def _write_mcp_json(root_path: Path, transport: str, host: str, port: int) -> None:
+def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, port: int) -> None:
     import json
 
     mcp_file = root_path / ".mcp.json"
@@ -329,9 +341,9 @@ def _write_mcp_json(root_path: Path, transport: str, host: str, port: int) -> No
     else:
         config["mcpServers"]["dotnet-graph"] = {
             "command": "uvx",
-            "args": ["dotnet-graph", "serve", "--root", str(root_path)],
+            "args": ["dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path)],
             "type": "stdio",
         }
-        click.echo(f"[3/3] Wrote {mcp_file}")
+        click.echo(f"[3/3] Wrote {mcp_file} (db: {db_path})")
 
     mcp_file.write_text(json.dumps(config, indent=2))

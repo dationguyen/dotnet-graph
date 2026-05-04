@@ -87,13 +87,12 @@ def serve(
     if db:
         _db_path = Path(db).resolve()
     elif root:
-        _db_path = Path(root).resolve() / ".claude" / ".dotnet-graph" / "knowledge.db"
+        _db_path = Path(root).resolve() / ".dotnet-graph" / "knowledge.db"
 
     # Lazy build: if no DB exists yet, run a full build before starting.
     if _db_path is not None and not _db_path.exists():
         from dotnet_graph.builder import build as _build
-        # DB lives at <root>/.claude/.dotnet-graph/knowledge.db → go up 3 levels
-        root_path = Path(root).resolve() if root else _db_path.parent.parent.parent
+        root_path = Path(root).resolve() if root else _db_path.parent.parent
         print(f"No knowledge graph found — building now for {root_path} ...", file=sys.stderr)
         _build(root_path, _db_path, verbose=True, incremental=False)
 
