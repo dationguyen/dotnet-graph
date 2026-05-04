@@ -155,6 +155,11 @@ CREATE TABLE IF NOT EXISTS file_hashes (
     analyzed_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS build_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_types_name      ON types(name);
 CREATE INDEX IF NOT EXISTS idx_types_full_name ON types(full_name);
 CREATE INDEX IF NOT EXISTS idx_rel_from        ON relationships(from_type);

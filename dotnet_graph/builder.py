@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -514,6 +515,30 @@ def _store_hashes(conn: sqlite3.Connection, all_hashes: dict[str, str]) -> None:
     )
 
 
+def _store_build_meta(
+    conn: sqlite3.Connection,
+    *,
+    mode: str,
+    files_analyzed: int,
+    total_files: int,
+    duration_s: float,
+) -> None:
+    from dotnet_graph import __version__
+    now = datetime.now(timezone.utc).isoformat()
+    meta = {
+        "last_built_at": now,
+        "build_mode": mode,
+        "files_analyzed": str(files_analyzed),
+        "total_files": str(total_files),
+        "duration_seconds": f"{duration_s:.1f}",
+        "tool_version": __version__,
+    }
+    conn.executemany(
+        "INSERT OR REPLACE INTO build_meta (key, value) VALUES (?,?)",
+        list(meta.items()),
+    )
+
+
 def _upsert_projects(root: Path, conn: sqlite3.Connection) -> tuple[list[dict], dict[str, int]]:
     projects = _collect_projects(root)
     cur = conn.cursor()
@@ -545,6 +570,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
     tmp_path = db_path.with_suffix(".db.tmp")
 
     try:
+        start = time.monotonic()
         all_hashes = _compute_all_hashes(root)
 
         if incremental and db_path.exists():
@@ -597,6 +623,13 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             if deleted:
                 dph = ",".join("?" * len(deleted))
                 conn.execute(f"DELETE FROM file_hashes WHERE path IN ({dph})", deleted)
+            _store_build_meta(
+                conn,
+                mode="incremental",
+                files_analyzed=len(to_analyze),
+                total_files=len(all_hashes),
+                duration_s=time.monotonic() - start,
+            )
             conn.commit()
 
             conn.close()
@@ -638,6 +671,13 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             conn.commit()
 
             _store_hashes(conn, all_hashes)
+            _store_build_meta(
+                conn,
+                mode="full",
+                files_analyzed=len(file_data_list),
+                total_files=len(all_hashes),
+                duration_s=time.monotonic() - start,
+            )
             conn.commit()
 
             tables = [
