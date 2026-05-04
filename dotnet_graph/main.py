@@ -5,6 +5,7 @@ Run as: dotnet-graph serve [--root <path>] [--db <path>]
 
 from __future__ import annotations
 
+import atexit
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,7 @@ from fastmcp import FastMCP
 
 from .db import open_db
 from .tools import register_query_tools, register_build_tools
+from . import registry
 
 _db_path: Path | None = None
 _conn: sqlite3.Connection | None = None
@@ -70,6 +72,10 @@ def serve(
         _db_path = Path(db).resolve()
     elif root:
         _db_path = Path(root).resolve() / ".dotnet-graph" / "knowledge.db"
+
+    db_path_str = str(_db_path) if _db_path else ""
+    registry.register(root, db_path_str, transport, host, port)
+    atexit.register(registry.deregister, db_path_str)
 
     if transport == "stdio":
         mcp.run(transport="stdio")
