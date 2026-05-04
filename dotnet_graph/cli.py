@@ -51,6 +51,29 @@ def serve(root: Optional[str], db: Optional[str], transport: str, host: str, por
     _serve(root=root, db=db, transport=transport, host=host, port=port)
 
 
+@cli.command("list")
+def list_servers() -> None:
+    """List all running dotnet-graph server instances."""
+    from dotnet_graph.registry import list_instances
+
+    instances = list_instances()
+    if not instances:
+        click.echo("No running dotnet-graph instances found.")
+        return
+
+    click.echo(f"\n{len(instances)} running instance(s):\n")
+    for inst in instances:
+        transport = inst.get("transport", "stdio")
+        click.echo(f"  root     : {inst.get('root') or '—'}")
+        click.echo(f"  db       : {inst.get('db_path') or '—'}")
+        click.echo(f"  pid      : {inst.get('pid', '—')}")
+        click.echo(f"  started  : {inst.get('started_at', '—')}")
+        click.echo(f"  transport: {transport}")
+        if transport == "http":
+            click.echo(f"  url      : {inst.get('url', '—')}")
+        click.echo("")
+
+
 @cli.command()
 @click.option("--root", default=".", type=click.Path(exists=True, file_okay=False))
 @click.option("--db", default=None, type=click.Path())
