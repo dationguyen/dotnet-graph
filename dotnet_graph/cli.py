@@ -37,10 +37,18 @@ def build(root: str, db: Optional[str], force_full: bool) -> None:
 @cli.command()
 @click.option("--root", default=None, type=click.Path(exists=True, file_okay=False), help="Solution root (infers --db)")
 @click.option("--db", default=None, type=click.Path(), help="Database path")
-def serve(root: Optional[str], db: Optional[str]) -> None:
-    """Start the MCP server (stdio transport)."""
+@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]), show_default=True, help="Transport protocol")
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host (HTTP transport only)")
+@click.option("--port", default=8000, show_default=True, type=int, help="Bind port (HTTP transport only)")
+def serve(root: Optional[str], db: Optional[str], transport: str, host: str, port: int) -> None:
+    """Start the MCP server.
+
+    Use --transport stdio (default) for Claude Code / local agents that spawn
+    the process directly. Use --transport http to expose an SSE endpoint that
+    remote agents can connect to over the network.
+    """
     from dotnet_graph.main import serve as _serve
-    _serve(root=root, db=db)
+    _serve(root=root, db=db, transport=transport, host=host, port=port)
 
 
 @cli.command()
@@ -93,8 +101,15 @@ def obsidian(root: str, db: Optional[str], vault: Optional[str]) -> None:
 @cli.command()
 @click.option("--root", default=".", type=click.Path(exists=True, file_okay=False), help="Project root to install into")
 @click.option("--db", default=None, type=click.Path(), help="Database path override")
-def install(root: str, db: Optional[str]) -> None:
-    """Add dotnet-graph to .mcp.json in the project root."""
+@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]), show_default=True, help="Transport used by the running server")
+@click.option("--host", default="localhost", show_default=True, help="Server host (HTTP transport only)")
+@click.option("--port", default=8000, show_default=True, type=int, help="Server port (HTTP transport only)")
+def install(root: str, db: Optional[str], transport: str, host: str, port: int) -> None:
+    """Add dotnet-graph to .mcp.json in the project root.
+
+    For stdio (default): registers a subprocess entry that your AI tool spawns.
+    For http: registers the SSE URL of an already-running HTTP server instance.
+    """
     import json
 
     root_path = Path(root).resolve()
@@ -107,18 +122,25 @@ def install(root: str, db: Optional[str]) -> None:
 
     config.setdefault("mcpServers", {})
 
-    args = ["dotnet-graph", "serve", "--root", str(root_path)]
-    if db:
-        args += ["--db", db]
-
-    config["mcpServers"]["dotnet-graph"] = {
-        "command": "uvx",
-        "args": args,
-        "type": "stdio",
-    }
+    if transport == "http":
+        config["mcpServers"]["dotnet-graph"] = {
+            "url": f"http://{host}:{port}/sse",
+            "type": "sse",
+        }
+        click.echo(f"Installed dotnet-graph (HTTP/SSE) in {mcp_file}")
+        click.echo(f"Make sure the server is running: dotnet-graph serve --root {root_path} --transport http --port {port}")
+    else:
+        args = ["dotnet-graph", "serve", "--root", str(root_path)]
+        if db:
+            args += ["--db", db]
+        config["mcpServers"]["dotnet-graph"] = {
+            "command": "uvx",
+            "args": args,
+            "type": "stdio",
+        }
+        click.echo(f"Installed dotnet-graph (stdio) in {mcp_file}")
 
     with open(mcp_file, "w") as f:
         json.dump(config, f, indent=2)
 
-    click.echo(f"Installed dotnet-graph MCP server in {mcp_file}")
     click.echo("Restart your AI coding tool to pick up the new config.")
