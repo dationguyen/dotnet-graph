@@ -2,11 +2,52 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 import click
 
+
+# ── Root auto-detection ────────────────────────────────────────────────────────
+
+def _find_root() -> Path | None:
+    """Walk up from CWD looking for a .sln or .csproj to use as solution root."""
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        if any(parent.glob("*.sln")):
+            return parent
+        if any(p for p in parent.glob("*.csproj") if not any(
+            part in ("obj", "bin") for part in p.parts
+        )):
+            return parent
+    return None
+
+
+def _resolve_root(root: Optional[str]) -> Path:
+    """Return root as a resolved Path, auto-detecting from CWD when omitted."""
+    if root:
+        return Path(root).resolve()
+    detected = _find_root()
+    if detected is None:
+        raise click.ClickException(
+            "Could not find a .sln or .csproj file. "
+            "Run this command from inside a .NET solution, or pass --root <path>."
+        )
+    return detected
+
+
+def _db_for(root_path: Path, db: Optional[str]) -> Path:
+    return Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+
+
+def _claude_db_for(root_path: Path, db: Optional[str]) -> Path:
+    """DB path when registering via Claude Code — lives inside .claude/."""
+    return Path(db).resolve() if db else root_path / ".claude" / ".dotnet-graph" / "knowledge.db"
+
+
+# ── CLI group ──────────────────────────────────────────────────────────────────
 
 @click.group()
 @click.version_option()
@@ -14,11 +55,16 @@ def cli() -> None:
     """Roslyn-powered knowledge graph for .NET/C# codebases."""
 
 
+# ── build ──────────────────────────────────────────────────────────────────────
+
 @cli.command()
-@click.option("--root", required=True, type=click.Path(exists=True, file_okay=False), help="Solution root directory")
-@click.option("--db", default=None, type=click.Path(), help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
-@click.option("--full", "force_full", is_flag=True, default=False, help="Force a full rebuild instead of incremental")
-def build(root: str, db: Optional[str], force_full: bool) -> None:
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(),
+              help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
+@click.option("--full", "force_full", is_flag=True, default=False,
+              help="Force a full rebuild instead of incremental")
+def build(root: Optional[str], db: Optional[str], force_full: bool) -> None:
     """Build (or rebuild) the knowledge graph.
 
     By default runs an incremental build — only re-analyzes files whose
@@ -27,36 +73,48 @@ def build(root: str, db: Optional[str], force_full: bool) -> None:
     """
     from dotnet_graph.builder import build as _build
 
-    root_path = Path(root).resolve()
-    db_path = Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
     mode = "full" if force_full else "incremental"
     click.echo(f"Building graph [{mode}] for {root_path} → {db_path}")
     _build(root_path, db_path, verbose=True, incremental=not force_full)
 
 
+# ── serve ──────────────────────────────────────────────────────────────────────
+
 @cli.command()
-@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False), help="Solution root (infers --db)")
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
 @click.option("--db", default=None, type=click.Path(), help="Database path")
-@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]), show_default=True, help="Transport protocol")
+@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]),
+              show_default=True, help="Transport protocol")
 @click.option("--host", default="0.0.0.0", show_default=True, help="Bind host (HTTP/REST only)")
-@click.option("--port", default=8000, show_default=True, type=int, help="MCP SSE port (HTTP transport only)")
-@click.option("--api-port", default=None, type=int, help="Also start the REST API on this port")
-def serve(root: Optional[str], db: Optional[str], transport: str, host: str, port: int, api_port: Optional[int]) -> None:
+@click.option("--port", default=8000, show_default=True, type=int,
+              help="MCP SSE port (HTTP transport only)")
+@click.option("--api-port", default=None, type=int,
+              help="Also start the REST API on this port")
+def serve(root: Optional[str], db: Optional[str], transport: str,
+          host: str, port: int, api_port: Optional[int]) -> None:
     """Start the MCP server.
 
     Use --transport stdio (default) for Claude Code / local agents that spawn
     the process directly. Use --transport http to expose an SSE endpoint that
     remote agents can connect to over the network.
 
-    Add --api-port to also start the REST API alongside the MCP server.
-    Example: dotnet-graph serve --transport http --port 8000 --api-port 8001
+    If no knowledge graph exists yet, a full build is triggered automatically
+    before the server starts.
     """
     from dotnet_graph.main import serve as _serve
-    _serve(root=root, db=db, transport=transport, host=host, port=port, api_port=api_port)
 
+    root_str = str(_resolve_root(root)) if not db else root
+    _serve(root=root_str, db=db, transport=transport, host=host, port=port, api_port=api_port)
+
+
+# ── api ────────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False), help="Solution root (infers --db)")
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
 @click.option("--db", default=None, type=click.Path(), help="Database path")
 @click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
 @click.option("--port", default=8001, show_default=True, type=int, help="Bind port")
@@ -65,24 +123,23 @@ def api(root: Optional[str], db: Optional[str], host: str, port: int) -> None:
 
     Exposes all query tools as HTTP endpoints with an OpenAPI spec at /docs.
     Useful for non-MCP agents (LangChain, curl, custom scripts).
-
-    Example: dotnet-graph api --root /path/to/solution --port 8001
     """
     import uvicorn
     from dotnet_graph.api import create_app
 
-    root_path = Path(root).resolve() if root else None
-    db_path = Path(db).resolve() if db else (root_path / ".dotnet-graph" / "knowledge.db" if root_path else None)
+    root_path = _resolve_root(root) if not db else (Path(root).resolve() if root else None)
+    db_path = _db_for(root_path, db) if root_path else (Path(db).resolve() if db else None)
 
     if db_path is None:
-        click.echo("Error: provide --root or --db", err=True)
-        raise SystemExit(1)
+        raise click.ClickException("Provide --root or --db.")
 
     click.echo(f"REST API → http://{host}:{port}/docs")
     click.echo(f"OpenAPI  → http://{host}:{port}/openapi.json")
     app = create_app(db_path)
     uvicorn.run(app, host=host, port=port)
 
+
+# ── list ───────────────────────────────────────────────────────────────────────
 
 @cli.command("list")
 def list_servers() -> None:
@@ -107,19 +164,23 @@ def list_servers() -> None:
         click.echo("")
 
 
+# ── status ─────────────────────────────────────────────────────────────────────
+
 @cli.command()
-@click.option("--root", default=".", type=click.Path(exists=True, file_okay=False))
-@click.option("--db", default=None, type=click.Path())
-def status(root: str, db: Optional[str]) -> None:
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(), help="Database path")
+def status(root: Optional[str], db: Optional[str]) -> None:
     """Show graph statistics."""
     from dotnet_graph.db import open_db, count
 
-    root_path = Path(root).resolve()
-    db_path = Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
 
     if not db_path.exists():
-        click.echo(f"No graph found at {db_path}. Run `dotnet-graph build --root {root}` first.")
-        return
+        raise click.ClickException(
+            f"No graph found at {db_path}. Run `dotnet-graph build` first."
+        )
 
     conn = open_db(db_path)
     tables = [
@@ -132,21 +193,27 @@ def status(root: str, db: Optional[str]) -> None:
         click.echo(f"  {t:<22}: {count(conn, t):>6,}")
 
 
+# ── obsidian ───────────────────────────────────────────────────────────────────
+
 @cli.command()
-@click.option("--root", default=".", type=click.Path(exists=True, file_okay=False))
-@click.option("--db", default=None, type=click.Path(), help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
-@click.option("--vault", default=None, type=click.Path(), help="Output vault directory (default: <root>/.dotnet-graph/obsidian)")
-def obsidian(root: str, db: Optional[str], vault: Optional[str]) -> None:
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(),
+              help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
+@click.option("--vault", default=None, type=click.Path(),
+              help="Output vault directory (default: <root>/.dotnet-graph/obsidian)")
+def obsidian(root: Optional[str], db: Optional[str], vault: Optional[str]) -> None:
     """Generate an Obsidian vault from the knowledge graph."""
     from dotnet_graph.obsidian import build_vault
 
-    root_path = Path(root).resolve()
-    db_path = Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
     vault_path = Path(vault).resolve() if vault else root_path / ".dotnet-graph" / "obsidian"
 
     if not db_path.exists():
-        click.echo(f"No graph found at {db_path}. Run `dotnet-graph build --root {root}` first.")
-        return
+        raise click.ClickException(
+            f"No graph found at {db_path}. Run `dotnet-graph build` first."
+        )
 
     click.echo(f"Generating Obsidian vault → {vault_path}")
     n = build_vault(db_path, vault_path, verbose=True)
@@ -154,27 +221,113 @@ def obsidian(root: str, db: Optional[str], vault: Optional[str]) -> None:
     click.echo("Open that folder in Obsidian and switch to Graph View.")
 
 
-@cli.command()
-@click.option("--root", default=".", type=click.Path(exists=True, file_okay=False), help="Project root to install into")
-@click.option("--db", default=None, type=click.Path(), help="Database path override")
-@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]), show_default=True, help="Transport used by the running server")
-@click.option("--host", default="localhost", show_default=True, help="Server host (HTTP transport only)")
-@click.option("--port", default=8000, show_default=True, type=int, help="Server port (HTTP transport only)")
-def install(root: str, db: Optional[str], transport: str, host: str, port: int) -> None:
-    """Add dotnet-graph to .mcp.json in the project root.
+# ── install ────────────────────────────────────────────────────────────────────
 
-    For stdio (default): registers a subprocess entry that your AI tool spawns.
-    For http: registers the SSE URL of an already-running HTTP server instance.
+@cli.command()
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(), help="Database path override")
+@click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]),
+              show_default=True, help="Transport protocol")
+@click.option("--host", default="localhost", show_default=True,
+              help="Server host (HTTP transport only)")
+@click.option("--port", default=8000, show_default=True, type=int,
+              help="Server port (HTTP transport only)")
+@click.option("--scope", default="project",
+              type=click.Choice(["project", "local", "user"]), show_default=True,
+              help="Claude Code MCP scope: project=.claude/settings.json, "
+                   "local=git-ignored, user=~/.claude.json")
+@click.option("--skip-build", is_flag=True, default=False,
+              help="Skip building the knowledge graph")
+def install(root: Optional[str], db: Optional[str], transport: str,
+            host: str, port: int, scope: str, skip_build: bool) -> None:
+    """Set up dotnet-graph for AI coding tools in one command.
+
+    \b
+    What this does:
+      1. Auto-detects the solution root from your current directory
+      2. Builds the knowledge graph (incremental if DB already exists)
+      3. Registers with Claude Code via `claude mcp add` (if available)
+      4. Writes .mcp.json as a fallback for other MCP-compatible tools
+
+    \b
+    Examples:
+      dotnet-graph install                  # run from anywhere in your .NET repo
+      dotnet-graph install --scope user     # register globally in Claude Code
+      dotnet-graph install --skip-build     # config only, skip the graph build
     """
+    root_path = _resolve_root(root)
+    claude = shutil.which("claude") if transport == "stdio" else None
+
+    # DB location depends on which tool we're registering with:
+    #   Claude Code → inside .claude/ (co-located with its own config)
+    #   everything else → project root .dotnet-graph/
+    if db:
+        db_path = Path(db).resolve()
+    elif claude:
+        db_path = _claude_db_for(root_path, None)
+    else:
+        db_path = _db_for(root_path, None)
+
+    click.echo(f"Setting up dotnet-graph for {root_path}\n")
+
+    # Step 1: Build
+    if not skip_build:
+        _do_build(root_path, db_path)
+        click.echo("")
+
+    # Step 2: Claude Code native registration
+    if claude:
+        _try_claude_mcp_add(claude, root_path, db_path, scope)
+    else:
+        click.echo("[2/3] Claude Code CLI not found — skipping claude mcp add")
+
+    # Step 3: .mcp.json fallback
+    _write_mcp_json(root_path, db_path, transport, host, port)
+
+    click.echo("\nDone. Restart your AI coding tool to pick up the new config.")
+
+
+def _do_build(root_path: Path, db_path: Path) -> None:
+    from dotnet_graph.builder import build as _build
+
+    incremental = db_path.exists()
+    mode = "incremental" if incremental else "full"
+    click.echo(f"[1/3] Building knowledge graph [{mode}] ...")
+    _build(root_path, db_path, verbose=True, incremental=incremental)
+
+
+def _try_claude_mcp_add(claude: str, root_path: Path, db_path: Path, scope: str) -> bool:
+    """Run `claude mcp add` and return True on success."""
+    cmd = [
+        claude, "mcp", "add", "dotnet-graph",
+        "-s", scope,
+        "--",
+        "uvx", "dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        click.echo(f"[2/3] Registered with Claude Code (scope: {scope}, db: {db_path})")
+        return True
+    else:
+        click.echo(
+            f"[2/3] claude mcp add failed ({result.stderr.strip() or 'unknown error'}) "
+            "— falling back to .mcp.json only",
+            err=True,
+        )
+        return False
+
+
+def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, port: int) -> None:
     import json
 
-    root_path = Path(root).resolve()
     mcp_file = root_path / ".mcp.json"
-
-    config = {}
+    config: dict = {}
     if mcp_file.exists():
-        with open(mcp_file) as f:
-            config = json.load(f)
+        try:
+            config = json.loads(mcp_file.read_text())
+        except Exception:
+            config = {}
 
     config.setdefault("mcpServers", {})
 
@@ -183,20 +336,14 @@ def install(root: str, db: Optional[str], transport: str, host: str, port: int) 
             "url": f"http://{host}:{port}/sse",
             "type": "sse",
         }
-        click.echo(f"Installed dotnet-graph (HTTP/SSE) in {mcp_file}")
-        click.echo(f"Make sure the server is running: dotnet-graph serve --root {root_path} --transport http --port {port}")
+        click.echo(f"[3/3] Wrote {mcp_file} (HTTP/SSE → {host}:{port})")
+        click.echo(f"      Start the server: dotnet-graph serve --transport http --port {port}")
     else:
-        args = ["dotnet-graph", "serve", "--root", str(root_path)]
-        if db:
-            args += ["--db", db]
         config["mcpServers"]["dotnet-graph"] = {
             "command": "uvx",
-            "args": args,
+            "args": ["dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path)],
             "type": "stdio",
         }
-        click.echo(f"Installed dotnet-graph (stdio) in {mcp_file}")
+        click.echo(f"[3/3] Wrote {mcp_file} (db: {db_path})")
 
-    with open(mcp_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    click.echo("Restart your AI coding tool to pick up the new config.")
+    mcp_file.write_text(json.dumps(config, indent=2))
