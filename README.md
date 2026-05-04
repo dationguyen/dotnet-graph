@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/dotnet-graph)](https://pypi.org/project/dotnet-graph/)
 [![Python](https://img.shields.io/pypi/pyversions/dotnet-graph)](https://pypi.org/project/dotnet-graph/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-dationguyen-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/dationguyen)
 
 Ask Claude Code *"who injects `AuthService`?"* or *"what calls `ValidateToken`?"* and get answers backed by real Roslyn AST analysis — not guesswork.
 
