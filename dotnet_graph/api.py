@@ -35,7 +35,7 @@ def _get_db() -> sqlite3.Connection:
     if _conn is None or mtime != _conn_mtime:
         if _conn is not None:
             _conn.close()
-        conn = sqlite3.connect(str(_db_path))
+        conn = sqlite3.connect(str(_db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         _conn = conn
