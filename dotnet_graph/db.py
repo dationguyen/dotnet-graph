@@ -187,5 +187,15 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+_VALID_TABLES = frozenset({
+    "projects", "files", "types", "methods", "properties",
+    "relationships", "usings", "xaml_views", "registrations",
+    "endpoints", "config_keys", "features", "constructor_injections",
+    "field_declarations", "method_calls",
+})
+
+
 def count(conn: sqlite3.Connection, table: str) -> int:
+    if table not in _VALID_TABLES:
+        raise ValueError(f"Unknown table: {table!r}")
     return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

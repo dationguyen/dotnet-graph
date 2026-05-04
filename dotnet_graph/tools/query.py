@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
+from ..db import count as _count
+
 
 def register_query_tools(mcp, get_db: Callable[[], sqlite3.Connection]) -> None:
     """Register all read-only query tools on the FastMCP instance."""
@@ -340,6 +342,6 @@ def register_query_tools(mcp, get_db: Callable[[], sqlite3.Connection]) -> None:
         ]
         lines = ["**Graph statistics:**\n"]
         for t in tables:
-            n = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            n = _count(conn, t)
             lines.append(f"- {t:<22}: {n:>6,}")
         return "\n".join(lines)
