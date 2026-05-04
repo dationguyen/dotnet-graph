@@ -59,12 +59,27 @@ register_query_tools(mcp, _get_db)
 register_build_tools(mcp, _get_db_path)
 
 
+def _start_api_server(db_path: Path, host: str, port: int) -> None:
+    import sys
+    import threading
+    import uvicorn
+    from dotnet_graph.api import create_app
+
+    api_app = create_app(db_path)
+    config = uvicorn.Config(api_app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True, name="rest-api")
+    thread.start()
+    print(f"REST API started on http://{host}:{port}/docs", file=sys.stderr)
+
+
 def serve(
     root: Optional[str] = None,
     db: Optional[str] = None,
     transport: str = "stdio",
     host: str = "0.0.0.0",
     port: int = 8000,
+    api_port: Optional[int] = None,
 ) -> None:
     global _db_path
 
@@ -77,9 +92,12 @@ def serve(
     registry.register(root, db_path_str, transport, host, port)
     atexit.register(registry.deregister, db_path_str)
 
+    if api_port is not None and _db_path is not None:
+        _start_api_server(_db_path, host, api_port)
+
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
         import sys
-        print(f"Starting MCP server on http://{host}:{port}/sse", file=sys.stderr)
+        print(f"MCP server started on http://{host}:{port}/sse", file=sys.stderr)
         mcp.run(transport="sse", host=host, port=port)

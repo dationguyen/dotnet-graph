@@ -38,17 +38,50 @@ def build(root: str, db: Optional[str], force_full: bool) -> None:
 @click.option("--root", default=None, type=click.Path(exists=True, file_okay=False), help="Solution root (infers --db)")
 @click.option("--db", default=None, type=click.Path(), help="Database path")
 @click.option("--transport", default="stdio", type=click.Choice(["stdio", "http"]), show_default=True, help="Transport protocol")
-@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host (HTTP transport only)")
-@click.option("--port", default=8000, show_default=True, type=int, help="Bind port (HTTP transport only)")
-def serve(root: Optional[str], db: Optional[str], transport: str, host: str, port: int) -> None:
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host (HTTP/REST only)")
+@click.option("--port", default=8000, show_default=True, type=int, help="MCP SSE port (HTTP transport only)")
+@click.option("--api-port", default=None, type=int, help="Also start the REST API on this port")
+def serve(root: Optional[str], db: Optional[str], transport: str, host: str, port: int, api_port: Optional[int]) -> None:
     """Start the MCP server.
 
     Use --transport stdio (default) for Claude Code / local agents that spawn
     the process directly. Use --transport http to expose an SSE endpoint that
     remote agents can connect to over the network.
+
+    Add --api-port to also start the REST API alongside the MCP server.
+    Example: dotnet-graph serve --transport http --port 8000 --api-port 8001
     """
     from dotnet_graph.main import serve as _serve
-    _serve(root=root, db=db, transport=transport, host=host, port=port)
+    _serve(root=root, db=db, transport=transport, host=host, port=port, api_port=api_port)
+
+
+@cli.command()
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False), help="Solution root (infers --db)")
+@click.option("--db", default=None, type=click.Path(), help="Database path")
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host")
+@click.option("--port", default=8001, show_default=True, type=int, help="Bind port")
+def api(root: Optional[str], db: Optional[str], host: str, port: int) -> None:
+    """Start the REST API server (standalone, without MCP).
+
+    Exposes all query tools as HTTP endpoints with an OpenAPI spec at /docs.
+    Useful for non-MCP agents (LangChain, curl, custom scripts).
+
+    Example: dotnet-graph api --root /path/to/solution --port 8001
+    """
+    import uvicorn
+    from dotnet_graph.api import create_app
+
+    root_path = Path(root).resolve() if root else None
+    db_path = Path(db).resolve() if db else (root_path / ".dotnet-graph" / "knowledge.db" if root_path else None)
+
+    if db_path is None:
+        click.echo("Error: provide --root or --db", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"REST API → http://{host}:{port}/docs")
+    click.echo(f"OpenAPI  → http://{host}:{port}/openapi.json")
+    app = create_app(db_path)
+    uvicorn.run(app, host=host, port=port)
 
 
 @cli.command("list")
