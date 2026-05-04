@@ -81,12 +81,21 @@ def serve(
     port: int = 8000,
     api_port: Optional[int] = None,
 ) -> None:
+    import sys
     global _db_path
 
     if db:
         _db_path = Path(db).resolve()
     elif root:
-        _db_path = Path(root).resolve() / ".dotnet-graph" / "knowledge.db"
+        _db_path = Path(root).resolve() / ".claude" / ".dotnet-graph" / "knowledge.db"
+
+    # Lazy build: if no DB exists yet, run a full build before starting.
+    if _db_path is not None and not _db_path.exists():
+        from dotnet_graph.builder import build as _build
+        # DB lives at <root>/.claude/.dotnet-graph/knowledge.db → go up 3 levels
+        root_path = Path(root).resolve() if root else _db_path.parent.parent.parent
+        print(f"No knowledge graph found — building now for {root_path} ...", file=sys.stderr)
+        _build(root_path, _db_path, verbose=True, incremental=False)
 
     db_path_str = str(_db_path) if _db_path else ""
     registry.register(root, db_path_str, transport, host, port)
@@ -98,6 +107,5 @@ def serve(
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        import sys
         print(f"MCP server started on http://{host}:{port}/sse", file=sys.stderr)
         mcp.run(transport="sse", host=host, port=port)
