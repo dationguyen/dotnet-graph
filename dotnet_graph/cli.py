@@ -2,12 +2,53 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import click
+
+
+# ── Version check ──────────────────────────────────────────────────────────────
+
+def _check_for_update() -> None:
+    """Print a one-line nudge if a newer version is on PyPI (at most once per day)."""
+    try:
+        from dotnet_graph import __version__
+        cache_file = Path.home() / ".cache" / "dotnet-graph" / "version_check.json"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read cached result
+        cached: dict = {}
+        if cache_file.exists():
+            try:
+                cached = json.loads(cache_file.read_text())
+            except Exception:
+                pass
+
+        today = datetime.now(timezone.utc).date().isoformat()
+        if cached.get("checked_on") == today:
+            latest = cached.get("latest", __version__)
+        else:
+            import urllib.request
+            with urllib.request.urlopen(
+                "https://pypi.org/pypi/dotnet-graph/json", timeout=2
+            ) as resp:
+                latest = json.loads(resp.read())["info"]["version"]
+            cache_file.write_text(json.dumps({"checked_on": today, "latest": latest}))
+
+        if latest != __version__:
+            click.echo(
+                f"  Update available: {__version__} → {latest}  "
+                f"Run: dotnet-graph update",
+                err=True,
+            )
+    except Exception:
+        pass  # never break the CLI over a version check
 
 
 # ── Root auto-detection ────────────────────────────────────────────────────────
@@ -51,8 +92,11 @@ def _claude_db_for(root_path: Path, db: Optional[str]) -> Path:
 
 @click.group()
 @click.version_option()
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """Roslyn-powered knowledge graph for .NET/C# codebases."""
+    if ctx.invoked_subcommand != "update":
+        _check_for_update()
 
 
 # ── build ──────────────────────────────────────────────────────────────────────
@@ -347,3 +391,37 @@ def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, p
         click.echo(f"[3/3] Wrote {mcp_file} (db: {db_path})")
 
     mcp_file.write_text(json.dumps(config, indent=2))
+
+
+# ── update ─────────────────────────────────────────────────────────────────────
+
+@cli.command()
+def update() -> None:
+    """Upgrade dotnet-graph to the latest version on PyPI.
+
+    Detects whether you installed via uvx or pip and runs the right command.
+    """
+    from dotnet_graph import __version__
+
+    # Detect install method: if the executable lives inside a uv tool dir, use uvx.
+    exe = Path(sys.executable)
+    is_uvx = "uv" in str(exe) or shutil.which("uvx") is not None and (
+        ".local/share/uv" in str(exe) or "uv/tools" in str(exe)
+    )
+
+    if is_uvx and shutil.which("uvx"):
+        click.echo(f"Current version: {__version__}")
+        click.echo("Upgrading via uvx ...")
+        result = subprocess.run(["uvx", "tool", "upgrade", "dotnet-graph"])
+        if result.returncode != 0:
+            raise SystemExit(result.returncode)
+    else:
+        click.echo(f"Current version: {__version__}")
+        click.echo("Upgrading via pip ...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "dotnet-graph"]
+        )
+        if result.returncode != 0:
+            raise SystemExit(result.returncode)
+
+    click.echo("Done. Run `dotnet-graph --version` to confirm.")

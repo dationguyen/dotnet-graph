@@ -25,6 +25,9 @@ dependencies = [
     "uvicorn>=0.23",
 ]
 
+[project.optional-dependencies]
+dev = ["httpx", "fastapi[standard]"]
+
 [project.scripts]
 dotnet-graph = "dotnet_graph.cli:cli"
 
