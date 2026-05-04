@@ -12,6 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from filelock import FileLock, Timeout
+
 from .db import init_db, count
 
 XAML_CLASS_PAT = re.compile(r'x:Class="([\w.]+)"')
@@ -406,6 +408,17 @@ def _build_features(conn: sqlite3.Connection, verbose: bool = False) -> None:
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def build(root: Path, db_path: Path, verbose: bool = True) -> None:
+    lock_path = db_path.with_suffix(".lock")
+    lock = FileLock(str(lock_path), timeout=0)
+    try:
+        lock.acquire()
+    except Timeout:
+        raise RuntimeError(
+            f"A build is already in progress for this database.\n"
+            f"If no build is running, delete the lock file: {lock_path}"
+        )
+
+    conn = None
     tmp_path = db_path.with_suffix(".db.tmp")
     tmp_path.unlink(missing_ok=True)
 
@@ -490,9 +503,11 @@ def build(root: Path, db_path: Path, verbose: bool = True) -> None:
 
     except Exception:
         try:
-            if conn is not None:  # type: ignore[possibly-undefined]
+            if conn is not None:
                 conn.close()
         except Exception:
             pass
         tmp_path.unlink(missing_ok=True)
         raise
+    finally:
+        lock.release()
