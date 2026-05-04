@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dotnet-graph"
-version = "0.1.4"
+version = "0.1.5"
 description = "Roslyn-powered knowledge graph for .NET/C# codebases with MCP server"
 license = {text = "MIT"}
 requires-python = ">=3.11"
