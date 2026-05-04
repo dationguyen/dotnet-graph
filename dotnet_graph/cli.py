@@ -84,10 +84,6 @@ def _db_for(root_path: Path, db: Optional[str]) -> Path:
     return Path(db).resolve() if db else root_path / ".dotnet-graph" / "knowledge.db"
 
 
-def _claude_db_for(root_path: Path, db: Optional[str]) -> Path:
-    """DB path when registering via Claude Code — lives inside .claude/."""
-    return Path(db).resolve() if db else root_path / ".claude" / ".dotnet-graph" / "knowledge.db"
-
 
 # ── CLI group ──────────────────────────────────────────────────────────────────
 
@@ -303,16 +299,7 @@ def install(root: Optional[str], db: Optional[str], transport: str,
     """
     root_path = _resolve_root(root)
     claude = shutil.which("claude") if transport == "stdio" else None
-
-    # DB location depends on which tool we're registering with:
-    #   Claude Code → inside .claude/ (co-located with its own config)
-    #   everything else → project root .dotnet-graph/
-    if db:
-        db_path = Path(db).resolve()
-    elif claude:
-        db_path = _claude_db_for(root_path, None)
-    else:
-        db_path = _db_for(root_path, None)
+    db_path = _db_for(root_path, db)
 
     click.echo(f"Setting up dotnet-graph for {root_path}\n")
 
