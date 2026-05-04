@@ -1,6 +1,6 @@
 # MCP Tools
 
-Available when dotnetgraph is registered as an MCP server (via `dotnet-graph install` or `.mcp.json`).
+Available when dotnet-graph is registered as an MCP server (via `dotnet-graph install` or `.mcp.json`).
 
 ---
 

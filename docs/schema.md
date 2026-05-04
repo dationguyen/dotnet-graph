@@ -1,6 +1,6 @@
 # What Gets Indexed
 
-dotnetgraph runs the Roslyn AST analyzer over every `.cs` file in your solution and stores the results in a SQLite database at `<root>/.dotnet-graph/knowledge.db`.
+dotnet-graph runs the Roslyn AST analyzer over every `.cs` file in your solution and stores the results in a SQLite database at `<root>/.dotnet-graph/knowledge.db`.
 
 ## Tables
 

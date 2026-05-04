@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk git *)",
+      "Bash(brew list *)",
+      "Bash(rtk gh pr create --base feat/task-5-instance-registry --head feat/task-6-rest-api --title 'feat: add REST API wrapper for non-MCP agents' --body ' *)",
+      "Bash(rtk gh *)",
+      "Bash(git checkout *)",
+      "Bash(git rebase *)"
+    ]
+  }
+}

@@ -1,12 +1,12 @@
-# dotnetgraph
+# dotnet-graph
 
-[![PyPI](https://img.shields.io/pypi/v/dotnetgraph)](https://pypi.org/project/dotnetgraph/)
-[![Python](https://img.shields.io/pypi/pyversions/dotnetgraph)](https://pypi.org/project/dotnetgraph/)
+[![PyPI](https://img.shields.io/pypi/v/dotnet-graph)](https://pypi.org/project/dotnet-graph/)
+[![Python](https://img.shields.io/pypi/pyversions/dotnet-graph)](https://pypi.org/project/dotnet-graph/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Ask Claude Code *"who injects `AuthService`?"* or *"what calls `ValidateToken`?"* and get answers backed by real Roslyn AST analysis — not guesswork.
 
-dotnetgraph indexes your .NET solution into a structured SQLite database and exposes it over MCP (for Claude Code) or a REST API (for anything else).
+dotnet-graph indexes your .NET solution into a structured SQLite database and exposes it over MCP (for AI Agents) or a REST API (for anything else).
 
 ## Requirements
 
@@ -16,13 +16,13 @@ dotnetgraph indexes your .NET solution into a structured SQLite database and exp
 ## Install
 
 ```bash
-pip install dotnetgraph
+pip install dotnet-graph
 ```
 
 Or run without installing via [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uvx dotnetgraph
+uvx dotnet-graph
 ```
 
 ## Setup

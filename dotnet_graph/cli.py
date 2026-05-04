@@ -36,7 +36,7 @@ def _check_for_update() -> None:
         else:
             import urllib.request
             with urllib.request.urlopen(
-                "https://pypi.org/pypi/dotnetgraph/json", timeout=2
+                "https://pypi.org/pypi/dotnet-graph/json", timeout=2
             ) as resp:
                 latest = json.loads(resp.read())["info"]["version"]
             cache_file.write_text(json.dumps({"checked_on": today, "latest": latest}))
@@ -348,7 +348,7 @@ def _try_claude_mcp_add(claude: str, root_path: Path, db_path: Path, scope: str)
         "-s", scope,
         "dotnet-graph",
         "--",
-        "uvx", "dotnetgraph", "serve", "--root", str(root_path), "--db", str(db_path),
+        "uvx", "dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode == 0:

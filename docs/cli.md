@@ -6,7 +6,7 @@ All commands auto-detect the solution root by walking up from your current direc
 
 ## install
 
-Set up dotnetgraph for AI coding tools in one command.
+Set up dotnet-graph for AI coding tools in one command.
 
 ```bash
 dotnet-graph install [OPTIONS]
@@ -114,7 +114,7 @@ Prints row counts for every table and the DB file size.
 
 ## list
 
-Show all running dotnetgraph server instances.
+Show all running dotnet-graph server instances.
 
 ```bash
 dotnet-graph list
@@ -126,7 +126,7 @@ Instances register themselves on startup and deregister on shutdown. Dead proces
 
 ## update
 
-Upgrade dotnetgraph to the latest version on PyPI.
+Upgrade dotnet-graph to the latest version on PyPI.
 
 ```bash
 dotnet-graph update
