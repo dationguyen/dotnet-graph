@@ -29,11 +29,23 @@ Run once from anywhere inside your .NET repo:
 dotnet-graph install
 ```
 
-This auto-detects your solution root, builds the knowledge graph, registers with Claude Code via `claude mcp add`, and writes `.mcp.json` as a fallback. Restart Claude Code and you're done.
+This auto-detects your solution root and:
+
+1. Builds the knowledge graph (SQLite DB at `.dotnet-graph/knowledge.db`)
+2. Registers with Claude Code via `claude mcp add`
+3. Writes `.mcp.json` as a fallback for other MCP clients
+4. Patches `CLAUDE.md` with dotnet-graph tool instructions so Claude knows how to use it
+
+Restart Claude Code and you're done.
 
 > **Solution not at repo root?** Pass the path explicitly:
 > ```bash
 > dotnet-graph install --root /path/to/your/repo
+> ```
+
+> **Skip CLAUDE.md patching:**
+> ```bash
+> dotnet-graph install --skip-claude-md
 > ```
 
 > Subsequent builds are incremental — only changed files are re-analyzed. Force a full rebuild with `dotnet-graph build --full`.
