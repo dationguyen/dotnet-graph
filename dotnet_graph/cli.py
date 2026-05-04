@@ -280,8 +280,11 @@ def obsidian(root: Optional[str], db: Optional[str], vault: Optional[str]) -> No
                    "project=shared with team, user=all your projects")
 @click.option("--skip-build", is_flag=True, default=False,
               help="Skip building the knowledge graph")
+@click.option("--skip-claude-md", is_flag=True, default=False,
+              help="Skip patching CLAUDE.md with dotnet-graph instructions")
 def install(root: Optional[str], db: Optional[str], transport: str,
-            host: str, port: int, scope: str, skip_build: bool) -> None:
+            host: str, port: int, scope: str, skip_build: bool,
+            skip_claude_md: bool) -> None:
     """Set up dotnet-graph for AI coding tools in one command.
 
     \b
@@ -290,12 +293,14 @@ def install(root: Optional[str], db: Optional[str], transport: str,
       2. Builds the knowledge graph (incremental if DB already exists)
       3. Registers with Claude Code via `claude mcp add` (if available)
       4. Writes .mcp.json as a fallback for other MCP-compatible tools
+      5. Patches CLAUDE.md with dotnet-graph tool instructions for AI agents
 
     \b
     Examples:
       dotnet-graph install                  # run from anywhere in your .NET repo
       dotnet-graph install --scope user     # register globally in Claude Code
       dotnet-graph install --skip-build     # config only, skip the graph build
+      dotnet-graph install --skip-claude-md # skip CLAUDE.md patching
     """
     root_path = _resolve_root(root)
     claude = shutil.which("claude") if transport == "stdio" else None
@@ -316,6 +321,10 @@ def install(root: Optional[str], db: Optional[str], transport: str,
 
     # Step 3: .mcp.json fallback
     _write_mcp_json(root_path, db_path, transport, host, port)
+
+    # Step 4: Patch CLAUDE.md
+    if not skip_claude_md:
+        _patch_claude_md(root_path)
 
     click.echo("\nDone. Restart your AI coding tool to pick up the new config.")
 
@@ -380,6 +389,71 @@ def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, p
         click.echo(f"[3/3] Wrote {mcp_file} (db: {db_path})")
 
     mcp_file.write_text(json.dumps(config, indent=2))
+
+
+_CLAUDE_MD_MARKER = "<!-- dotnet-graph -->"
+
+_CLAUDE_MD_SECTION = """\
+<!-- dotnet-graph -->
+## Code Knowledge Graph
+
+A Roslyn-powered knowledge graph lives at `.dotnet-graph/knowledge.db`, built by the `dotnet-graph` tool.
+
+**IMPORTANT: Always use the `dotnet-graph` MCP tools first** before falling back to `Grep`/`Glob` when answering questions about:
+- Where a class/interface/service is defined
+- What methods or properties a type has
+- What implements or inherits from a type
+- Which module owns a piece of functionality
+- Cross-module dependencies
+- How a service is registered (DI lifetime)
+- Who injects a service (constructor injection)
+- What a method calls, or what calls a given method
+
+The `dotnet-graph` MCP server is configured in `.mcp.json`. If unavailable, fall back to `Grep` but note it to the user.
+
+### Tool selection
+
+| Task | Tool |
+|------|------|
+| Find a type by name | `find_type` |
+| All members, fields, constructor params | `get_type_members` |
+| Who implements an interface | `find_implementors` |
+| Who injects a service | `find_injectors` |
+| What a method calls | `get_method_calls` |
+| Who calls a method | `find_callers` |
+| DI registrations | `get_di_registrations` |
+| HTTP endpoints | `get_endpoints` |
+| ViewModel feature index | `get_features` |
+| Keyword search across types/methods | `search` |
+| Graph stats / health check | `get_stats` |
+| Generate Obsidian vault | `build_obsidian_vault` |
+| Rebuild the graph | `build_graph` |
+
+### Workflow
+
+1. `find_type` — locate a class or interface
+2. `get_type_members` — full member details (methods, properties, fields, constructor params)
+3. `find_injectors` — who uses a service
+4. `get_method_calls` — trace execution flow within a method
+5. `find_callers` — all callers of a method across the codebase
+6. Fall back to `Grep` only if the graph doesn't have what you need.
+"""
+
+
+def _patch_claude_md(root_path: Path) -> None:
+    claude_md = root_path / "CLAUDE.md"
+
+    if claude_md.exists():
+        content = claude_md.read_text()
+        if _CLAUDE_MD_MARKER in content:
+            click.echo("[4/4] CLAUDE.md already contains dotnet-graph instructions — skipping")
+            return
+        updated = content.rstrip("\n") + "\n\n" + _CLAUDE_MD_SECTION
+        claude_md.write_text(updated)
+        click.echo(f"[4/4] Appended dotnet-graph instructions to {claude_md}")
+    else:
+        claude_md.write_text(_CLAUDE_MD_SECTION)
+        click.echo(f"[4/4] Created {claude_md} with dotnet-graph instructions")
 
 
 # ── update ─────────────────────────────────────────────────────────────────────
