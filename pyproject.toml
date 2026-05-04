@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dotnet-graph"
+name = "dotnetgraph"
 version = "0.1.0"
 description = "Roslyn-powered knowledge graph for .NET/C# codebases with MCP server"
 license = {text = "MIT"}
