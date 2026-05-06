@@ -50,6 +50,16 @@ This auto-detects your solution root and:
 
 Restart your AI coding tool and you're done.
 
+**Optional: install Claude Code hooks**
+
+For an even tighter workflow, add Claude Code hooks that nudge the AI to use dotnet-graph before falling back to Grep and remind it to keep knowledge notes up to date:
+
+```bash
+dotnet-graph configure-claude           # write to .claude/settings.json (shared)
+dotnet-graph configure-claude --scope local  # personal, git-ignored
+dotnet-graph configure-claude --dry-run      # preview without writing
+```
+
 > **Solution not at repo root?** Pass the path explicitly:
 > ```bash
 > dotnet-graph install --root /path/to/your/repo

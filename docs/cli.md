@@ -38,6 +38,44 @@ dotnet-graph install [OPTIONS]
 
 ---
 
+## configure-claude
+
+Add Claude Code hooks that enforce dotnet-graph best practices.
+
+```bash
+dotnet-graph configure-claude [OPTIONS]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--root` | auto-detected | Solution root (ignored for `--scope user`) |
+| `--scope project\|local\|user` | `project` | Where to write the settings file |
+| `--dry-run` | off | Preview changes without writing |
+
+**What it installs:**
+
+| Hook | Trigger | Effect |
+|------|---------|--------|
+| `PreToolUse` | `Grep` or `Glob` call | Reminds the AI to query dotnet-graph first |
+| `PostToolUse` | Edit or Write to a `.cs` file | Reminds the AI to call `get_or_create_note` and `update_note` |
+| `SessionStart` | Session opens | Warns if `knowledge.db` is missing or older than the latest commit |
+
+**Scopes:**
+
+| Scope | File | When to use |
+|-------|------|-------------|
+| `project` | `<root>/.claude/settings.json` | Shared with team (commit it) |
+| `local` | `<root>/.claude/settings.local.json` | Personal, git-ignored |
+| `user` | `~/.claude/settings.json` | All your projects |
+
+The command is **idempotent** — re-running it skips hooks that are already installed.
+
+**Why a separate command and not part of `install`?**
+
+`install` wires up the MCP server and patches rules files — things every user needs. Hook configuration touches Claude Code's settings outside the project boundary, so it's an explicit opt-in step rather than a default.
+
+---
+
 ## build
 
 Build or incrementally update the knowledge graph.

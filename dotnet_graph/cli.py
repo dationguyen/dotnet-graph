@@ -340,6 +340,163 @@ def sync_note(type_name: str, root: Optional[str], db: Optional[str], notes: Opt
     click.echo(result["content"])
 
 
+# ── configure-claude ──────────────────────────────────────────────────────────
+
+_HOOK_MARKER = "dotnet-graph:"
+
+_PRETOOLS_HOOK_GROUP: dict = {
+    "matcher": "Grep|Glob",
+    "hooks": [
+        {
+            "type": "command",
+            "command": (
+                """echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"REMINDER: If searching for a type, class, interface, or cross-module dependency — query via the dotnet-graph MCP tool FIRST. It is faster and uses fewer tokens than Grep/Glob."}}'"""
+            ),
+            "statusMessage": "dotnet-graph: nudging graph-first...",
+        }
+    ],
+}
+
+_POST_CS_HOOK_GROUP: dict = {
+    "matcher": "Edit|Write",
+    "hooks": [
+        {
+            "type": "command",
+            "if": "Edit(*.cs)|Write(*.cs)",
+            "command": (
+                """echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"You just edited a .cs file — call get_or_create_note for the type you modified, then update_note with purpose, key behaviours, gotchas, and work log."}}'"""
+            ),
+            "statusMessage": "dotnet-graph: nudging knowledge note...",
+        }
+    ],
+}
+
+_SESSION_START_HOOK_GROUP: dict = {
+    "matcher": "",
+    "hooks": [
+        {
+            "type": "command",
+            "command": (
+                'DB=".dotnet-graph/knowledge.db"; '
+                'if [ ! -f "$DB" ]; then '
+                """echo '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"dotnet-graph knowledge.db is missing. Rebuild: uvx dotnet-graph build"}}'; """
+                'else '
+                'DB_MTIME=$(stat -f %m "$DB" 2>/dev/null); '
+                'COMMIT_TIME=$(git log -1 --format=%ct 2>/dev/null); '
+                'if [ -n "$DB_MTIME" ] && [ -n "$COMMIT_TIME" ] && [ "$DB_MTIME" -lt "$COMMIT_TIME" ]; then '
+                'COMMIT=$(git rev-parse --short HEAD 2>/dev/null); '
+                r'echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"dotnet-graph may be stale - db older than latest commit $COMMIT. Rebuild: uvx dotnet-graph build\"}}"; '
+                """else echo '{"continue":true,"suppressOutput":true}'; fi; fi"""
+            ),
+            "statusMessage": "dotnet-graph: checking db freshness...",
+            "timeout": 10,
+        }
+    ],
+}
+
+
+def _hook_installed(event_hooks: list) -> bool:
+    """Return True if any hook in the list already has our marker in statusMessage."""
+    for group in event_hooks:
+        for h in group.get("hooks", []):
+            if h.get("statusMessage", "").startswith(_HOOK_MARKER):
+                return True
+    return False
+
+
+def _claude_settings_path(root_path: Path, scope: str) -> Path:
+    if scope == "user":
+        return Path.home() / ".claude" / "settings.json"
+    elif scope == "local":
+        return root_path / ".claude" / "settings.local.json"
+    else:
+        return root_path / ".claude" / "settings.json"
+
+
+def _apply_claude_hooks(settings_path: Path, dry_run: bool) -> list[str]:
+    config: dict = {}
+    if settings_path.exists():
+        try:
+            config = json.loads(settings_path.read_text())
+        except Exception:
+            pass
+
+    config.setdefault("hooks", {})
+    msgs: list[str] = []
+    changed = False
+
+    for event, hook_group in [
+        ("PreToolUse", _PRETOOLS_HOOK_GROUP),
+        ("PostToolUse", _POST_CS_HOOK_GROUP),
+        ("SessionStart", _SESSION_START_HOOK_GROUP),
+    ]:
+        existing = config["hooks"].setdefault(event, [])
+        if _hook_installed(existing):
+            msgs.append(f"[=] {event}: already configured — skipping")
+        else:
+            if not dry_run:
+                existing.append(hook_group)
+                changed = True
+            verb = "would add" if dry_run else "added"
+            msgs.append(f"[+] {event}: {verb} dotnet-graph hook")
+
+    if changed:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps(config, indent=2))
+
+    return msgs
+
+
+@cli.command("configure-claude")
+@click.option("--root", default=None, type=click.Path(file_okay=False),
+              help="Solution root (auto-detected from CWD; ignored for --scope user)")
+@click.option("--scope", default="project",
+              type=click.Choice(["project", "local", "user"]), show_default=True,
+              help="project=<root>/.claude/settings.json (committed), "
+                   "local=<root>/.claude/settings.local.json (git-ignored), "
+                   "user=~/.claude/settings.json (all projects)")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Preview what would change without writing any files")
+def configure_claude(root: Optional[str], scope: str, dry_run: bool) -> None:
+    """Add Claude Code hooks that enforce dotnet-graph best practices.
+
+    \b
+    Installs three hooks into .claude/settings.json (or the scoped equivalent):
+      PreToolUse   — nudges the AI to use dotnet-graph before falling back to Grep/Glob
+      PostToolUse  — reminds the AI to call get_or_create_note after editing a .cs file
+      SessionStart — warns when knowledge.db is missing or older than the latest commit
+
+    \b
+    Scopes:
+      project  → <root>/.claude/settings.json        (committed, shared with the team)
+      local    → <root>/.claude/settings.local.json  (git-ignored, personal overrides)
+      user     → ~/.claude/settings.json             (applies to all your projects)
+
+    \b
+    Examples:
+      dotnet-graph configure-claude                   # project scope (default)
+      dotnet-graph configure-claude --scope local     # personal, not committed
+      dotnet-graph configure-claude --scope user      # all projects globally
+      dotnet-graph configure-claude --dry-run         # preview without writing
+    """
+    root_path = Path(root).resolve() if root else (
+        Path.cwd() if scope == "user" else _resolve_root(None)
+    )
+    settings_path = _claude_settings_path(root_path, scope)
+
+    action = "Would write" if dry_run else "Writing"
+    click.echo(f"{action} hooks to: {settings_path}\n")
+
+    msgs = _apply_claude_hooks(settings_path, dry_run)
+    for msg in msgs:
+        click.echo(f"  {msg}")
+
+    if not dry_run:
+        click.echo("\nDone. Restart Claude Code to pick up the new hooks.")
+    else:
+        click.echo("\n(Dry run — no files written.)")
+
+
 # ── install ────────────────────────────────────────────────────────────────────
 
 @cli.command()
