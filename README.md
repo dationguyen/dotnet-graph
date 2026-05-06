@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-dationguyen-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/dationguyen)
 
-Ask Claude Code *"who injects `AuthService`?"* or *"what calls `ValidateToken`?"* and get answers backed by real Roslyn AST analysis — not guesswork.
+Ask your AI coding tool *"who injects `AuthService`?"* or *"what calls `ValidateToken`?"* and get answers backed by real Roslyn AST analysis — not guesswork.
 
-dotnet-graph indexes your .NET solution into a structured SQLite database and exposes it over MCP (for AI Agents) or a REST API (for anything else).
+dotnet-graph indexes your .NET solution into a structured SQLite database and exposes it over MCP (for AI agents) or a REST API (for anything else). Works with Claude Code, Cursor, and any other MCP-compatible tool.
 
 ## Requirements
 
@@ -27,24 +27,35 @@ pip install dotnet-graph
 Run once from anywhere inside your .NET repo:
 
 ```bash
+# Claude Code (default)
 dotnet-graph install
+
+# Cursor
+dotnet-graph install --agent cursor
+
+# Both at once
+dotnet-graph install --agent all
 ```
 
 This auto-detects your solution root and:
 
 1. Builds the knowledge graph (SQLite DB at `.dotnet-graph/knowledge.db`)
-2. Registers with Claude Code via `claude mcp add`
-3. Writes `.mcp.json` as a fallback for other MCP clients
-4. Patches `CLAUDE.md` with dotnet-graph tool instructions so Claude knows how to use it
+2. Registers the MCP server with your AI coding tool
+3. Patches the agent rules file with dotnet-graph tool instructions
 
-Restart Claude Code and you're done.
+| Agent | MCP config | Rules file |
+|-------|-----------|------------|
+| Claude Code | `.mcp.json` + `claude mcp add` | `CLAUDE.md` |
+| Cursor | `.cursor/mcp.json` | `.cursorrules` + `AGENTS.md` |
+
+Restart your AI coding tool and you're done.
 
 > **Solution not at repo root?** Pass the path explicitly:
 > ```bash
 > dotnet-graph install --root /path/to/your/repo
 > ```
 
-> **Skip CLAUDE.md patching:**
+> **Skip rules file patching:**
 > ```bash
 > dotnet-graph install --skip-claude-md
 > ```
@@ -67,7 +78,23 @@ get_stats            → build metadata and row counts for the knowledge graph
 search               → keyword search across everything
 build_graph          → trigger an incremental or full rebuild from inside the agent
 build_obsidian_vault → export the graph as an Obsidian vault for visual exploration
+get_or_create_note   → get or create a persistent knowledge note for a type
+sync_note_structure  → refresh a note's structure after a graph rebuild
 ```
+
+## Knowledge notes
+
+AI agents can accumulate domain knowledge about types as they work, persisting it across sessions in `.dotnet-graph/notes/<Domain>/<Project>/<TypeName>.md`.
+
+Each note has two parts:
+- **Structure** — auto-generated from the graph (methods, DI, inheritance). Refreshed on demand via `sync_note_structure`.
+- **Notes section** — maintained by the agent (purpose, business logic, gotchas, work log). Never overwritten.
+
+Typical agent workflow:
+1. Read or modify a source file
+2. Call `get_or_create_note("TypeName")` — creates the note if new
+3. Edit the `## Notes` section with purpose, key behaviours, and a work log entry
+4. After a `build_graph`, call `sync_note_structure("TypeName")` to refresh structure without losing notes
 
 ## Keeping the graph up to date
 
@@ -79,7 +106,7 @@ dotnet-graph build        # incremental
 dotnet-graph build --full # full rebuild
 ```
 
-**From inside the agent** — just ask Claude to run `build_graph`:
+**From inside the agent** — just ask it to run `build_graph`:
 ```
 rebuild the graph
 ```
@@ -88,7 +115,7 @@ rebuild the graph
 ```bash
 dotnet-graph obsidian
 ```
-Or ask Claude: *"export the graph to Obsidian"* — it calls `build_obsidian_vault` directly.
+Or ask your agent: *"export the graph to Obsidian"* — it calls `build_obsidian_vault` directly.
 
 ## Development
 
