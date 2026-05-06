@@ -42,8 +42,8 @@ def register_build_tools(mcp, get_db_path: Callable[[], Path]) -> None:
 
         Call this when you read or modify a type. If the note already exists,
         returns its current content. If not, creates one from graph data with an
-        empty Notes section ready to fill in. Edit the Notes section using the
-        obsidian MCP's edit_file or write_file tools.
+        empty Notes section ready to fill in. Use update_note to write to the
+        Notes section.
 
         type_name: class or interface name (partial or full match)
         notes_dir: notes directory (default: <root>/.dotnet-graph/notes)
@@ -62,6 +62,33 @@ def register_build_tools(mcp, get_db_path: Callable[[], Path]) -> None:
 
         status = "Created" if result["created"] else "Existing"
         return f"{status} note: `{result['path']}`\n\n{result['content']}"
+
+    @mcp.tool()
+    def update_note(type_name: str, notes_content: str, notes_dir: str = "") -> str:
+        """Replace the ## Notes section of a knowledge note.
+
+        Writes AI-maintained context (purpose, business logic, gotchas, work log)
+        into the note for a type. The structural section (methods, properties,
+        injections) is left untouched. Creates the note first if it doesn't exist.
+
+        type_name: class or interface name (partial or full match)
+        notes_content: full text to place under the ## Notes heading (do not
+                       include the heading itself)
+        notes_dir: notes directory (default: <root>/.dotnet-graph/notes)
+        """
+        from dotnet_graph.notes import update_note as _impl
+
+        db_path = get_db_path()
+        if not db_path or not db_path.exists():
+            return "No graph found. Run build_graph first."
+
+        notes_path = Path(notes_dir).resolve() if notes_dir else db_path.parent / "notes"
+        result = _impl(db_path, type_name, notes_content, notes_path)
+
+        if "error" in result:
+            return result["error"]
+
+        return f"Updated note: `{result['path']}`\n\n{result['content']}"
 
     @mcp.tool()
     def sync_note_structure(type_name: str, notes_dir: str = "") -> str:

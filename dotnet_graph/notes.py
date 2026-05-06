@@ -1,8 +1,9 @@
 """Enriched knowledge notes for types — maintained by AI agents across sessions.
 
-Notes live in .dotnet-graph/notes/<Domain>/<TypeName>.md alongside the
-auto-generated obsidian vault. Each note has a structural section generated
-from the graph plus a ## Notes section that AI agents fill in as they work.
+Notes live in .dotnet-graph/notes/<Domain>/<Project>/<FullName>.md. Each note
+has a structural section generated from the graph plus a ## Notes section that
+AI agents fill in as they work. Use get_or_create_note to read/create and
+update_note to write the Notes section.
 """
 
 from __future__ import annotations
@@ -134,6 +135,45 @@ def get_or_create_note(db_path: Path, type_name: str, notes_dir: Path) -> dict:
     note_path.write_text(content, encoding="utf-8")
 
     return {"path": str(note_path), "content": content, "created": True}
+
+
+def update_note(db_path: Path, type_name: str, notes_content: str, notes_dir: Path) -> dict:
+    """Replace the ## Notes section of an existing note.
+
+    Creates the note first if it doesn't exist. notes_content is the full
+    text to place under the ## Notes heading (do not include the heading itself).
+    Returns a dict with: path (str), content (str), updated (bool).
+    On error, returns: error (str).
+    """
+    conn = open_db(db_path)
+    rows = _lookup_type(conn, type_name)
+    conn.close()
+
+    if not rows:
+        return {"error": f"Type '{type_name}' not found in graph. Run build_graph first."}
+    if len(rows) > 1:
+        return _ambiguous_error(type_name, rows)
+
+    t = rows[0]
+    full_name = t["full_name"] or t["name"]
+    domain = _normalize_domain(t["domain"])
+    note_path = note_path_for(full_name, domain, t["project_name"], notes_dir)
+
+    if not note_path.exists():
+        result = get_or_create_note(db_path, type_name, notes_dir)
+        if "error" in result:
+            return result
+        existing = result["content"]
+    else:
+        existing = note_path.read_text(encoding="utf-8")
+
+    marker_idx = existing.find(_NOTES_SECTION_MARKER)
+    if marker_idx == -1:
+        return {"error": f"Note at '{note_path}' has no '## Notes' marker — cannot update."}
+
+    new_content = existing[:marker_idx] + _NOTES_SECTION_MARKER + "\n" + notes_content.strip("\n") + "\n"
+    note_path.write_text(new_content, encoding="utf-8")
+    return {"path": str(note_path), "content": new_content, "updated": True}
 
 
 def sync_note_structure(db_path: Path, type_name: str, notes_dir: Path) -> dict:

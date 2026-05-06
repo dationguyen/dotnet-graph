@@ -1,66 +1,83 @@
-# Handoff — notes feature (2026-05-06)
+# Handoff — update_note tool (2026-05-06)
 
-This file was written by the Claude Code session in `smokeballmobile` to brief the session here.
+This file was written by the Claude Code session in `smokeballmobile` to brief the next session here.
 
-## What was built
+## What was done this session
 
-A **knowledge notes** system that lets AI agents accumulate domain knowledge about types as they work, persisting it across sessions. Notes live alongside the auto-generated Obsidian vault but are never overwritten by `build_graph` or `build_obsidian_vault`.
-
-## Files changed
-
-### New: `dotnet_graph/notes.py`
-Core module. Key function:
+### 1. Added `update_note` to `dotnet_graph/notes.py`
 
 ```python
-get_or_create_note(db_path: Path, type_name: str, notes_dir: Path) -> dict
+update_note(db_path: Path, type_name: str, notes_content: str, notes_dir: Path) -> dict
 ```
 
-- Looks up the type in `knowledge.db`
-- Returns `{"path", "content", "created": False}` if a note already exists
-- Creates `notes/<Domain>/<Project>/<TypeName>.md` from graph data if not — with a `## Notes` section placeholder
-- Grouping: `<Domain>` comes from the project's domain field (e.g. `Productivity`), `<Project>` is the project name (e.g. `MatterManagement.Memos.Mobile`)
+- Replaces the `## Notes` section of an existing note in-place
+- Preserves the structural section (methods, DI, inheritance) untouched
+- Auto-creates the note via `get_or_create_note` if it doesn't exist yet
+- Splits on `_NOTES_SECTION_MARKER = "---\n\n## Notes"`, replaces the tail
+- Returns `{"path", "content", "updated": True}` or `{"error": str}`
 
-Helper: `note_path_for(full_name, domain, project, notes_dir) -> Path`
+### 2. Registered `update_note` as an MCP tool in `dotnet_graph/tools/build_tools.py`
 
-### Modified: `dotnet_graph/tools/build_tools.py`
-Added new MCP tool `get_or_create_note` — wraps `notes.py`. Registered alongside `build_obsidian_vault` and `build_graph`.
+```python
+update_note(type_name: str, notes_content: str, notes_dir: str = "") -> str
+```
 
-### Modified: `dotnet_graph/cli.py`
-- Added `dotnet-graph note <TypeName>` CLI command
-- Updated `_CLAUDE_MD_SECTION` with the notes workflow (new row in tool table + `### Knowledge Notes` section explaining when/how to use `get_or_create_note`)
+- `notes_content`: full text under `## Notes` heading (do not include the heading)
+- Sits alongside `get_or_create_note` and `sync_note_structure`
 
-## Intended workflow (for AI agents using this)
+### 3. Updated `get_or_create_note` docstring
 
-1. Agent reads or modifies a source file
-2. Calls `get_or_create_note("TypeName")` — creates the note if it doesn't exist
-3. Uses the obsidian MCP's `edit_file` to update the `## Notes` section with:
-   - `### Purpose` — what the type does in business terms
-   - `### Key Behaviours` — patterns, invariants, gotchas
-   - `### Work Log` — ticket + date + what changed and why
+Removed reference to "obsidian MCP's edit_file" — now points to `update_note`.
+
+### Why
+
+The original design required two MCP servers (dotnet-graph + obsidian) to do a
+full note read/write cycle. With `update_note`, notes are fully self-contained
+inside dotnet-graph. The obsidian MCP is no longer needed for notes.
+
+## Current state
+
+- `pyproject.toml` version: **0.1.8** (not yet published for this change)
+- Uncommitted changes:
+  - `dotnet_graph/notes.py` — `update_note` function added
+  - `dotnet_graph/tools/build_tools.py` — `update_note` MCP tool registered + docstring fix
+  - `.claude/settings.local.json` — unrelated permission settings
 
 ## What needs to happen next
 
-- [ ] Bump version in `pyproject.toml` (currently `0.1.6` → suggest `0.1.7`)
-- [ ] Publish to PyPI so `uvx dotnet-graph` picks up the new `get_or_create_note` tool
-- [ ] Consider adding a `list_notes` MCP tool (search across existing notes)
-- [ ] Consider a `sync_note_structure` helper that updates the structure section of an existing note when the graph changes (currently only the Notes section is preserved)
+- [ ] Commit the changes (`notes.py` + `build_tools.py`)
+- [ ] Bump version `0.1.8` → `0.1.9` in `pyproject.toml`
+- [ ] Publish to PyPI (`uv publish` or `python -m build && twine upload`)
+- [ ] Restart dotnet-graph MCP server in `smokeballmobile` so `mcp__dotnet-graph__update_note` appears
 
-## Live test results
+## Notes file naming (FYI for context)
 
-Tested against `smokeballmobile` (1,884 types, 5,058 methods):
-- `get_or_create_note(db, "TaskService", notes_dir)` → `Productivity/Tasking.ManageTasks.Mobile/TaskService.md` ✓
-- `get_or_create_note(db, "AddEditMemoViewModel", notes_dir)` → `Productivity/MatterManagement.Memos.Mobile/AddEditMemoViewModel.md` ✓
-- `get_or_create_note(db, "MemosListViewModel", notes_dir)` → `Productivity/MatterManagement.Memos.Mobile/MemosListViewModel.md` ✓
+In `smokeballmobile`, existing notes were migrated this session from short names
+(`TaskService.md`) to FQDN names (`Tasking.ManageTasks.Mobile.Services.Impl.TaskService.md`).
+This matches what `get_or_create_note` now generates. Notes live at:
 
-All three notes have been enriched with real domain knowledge and live at:
 ```
 smokeballmobile/.dotnet-graph/notes/
-├── Productivity/
-│   ├── MatterManagement.Memos.Mobile/
-│   │   ├── AddEditMemoViewModel.md
-│   │   └── MemosListViewModel.md
-│   └── Tasking.ManageTasks.Mobile/
-│       ├── AddEditTaskViewModel.md
-│       └── TaskService.md
-└── README.md
+└── Productivity/
+    ├── MatterManagement.BrowseMatters.Mobile/
+    │   ├── MatterManagement.BrowseMatters.Mobile.Services.IProvideOnlineData.md
+    │   ├── MatterManagement.BrowseMatters.Mobile.Services.Impl.OnlineDataProvider.md
+    │   ├── MatterManagement.BrowseMatters.Mobile.ViewModels.MatterListViewModel.md
+    │   └── MatterManagement.BrowseMatters.Mobile.ViewModels.OnlineMatterListViewModel.md
+    ├── MatterManagement.Memos.Mobile/
+    │   ├── MatterManagement.Memos.Mobile.ViewModels.AddEditMemoViewModel.md
+    │   └── MatterManagement.Memos.Mobile.ViewModels.MemosListViewModel.md
+    └── Tasking.ManageTasks.Mobile/
+        ├── Tasking.ManageTasks.Mobile.Services.Impl.TaskService.md
+        └── Tasking.ManageTasks.Mobile.ViewModels.AddEditTaskViewModel.md
 ```
+
+## Quick verification
+
+```bash
+cd ~/WorkStation/dotnet-graph
+.venv/bin/python -c "from dotnet_graph.notes import update_note; print('OK')"
+.venv/bin/python -c "from dotnet_graph.tools.build_tools import register_build_tools; print('OK')"
+```
+
+Both should print `OK`.

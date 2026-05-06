@@ -516,6 +516,7 @@ The `dotnet-graph` MCP server is configured in `.mcp.json` (or `.cursor/mcp.json
 | Graph stats / health check | `get_stats` |
 | Generate Obsidian vault | `build_obsidian_vault` |
 | Get/create enriched knowledge note | `get_or_create_note` |
+| Write the ## Notes section of a note | `update_note` |
 | Refresh note structure after graph rebuild | `sync_note_structure` |
 | Rebuild the graph | `build_graph` |
 
@@ -539,7 +540,7 @@ Enriched notes live in `.dotnet-graph/notes/<Domain>/<TypeName>.md` and persist 
 
 **Workflow:**
 1. Call `get_or_create_note("TypeName")` — creates the note if it doesn't exist yet
-2. Edit the `## Notes` section using the obsidian MCP's `edit_file` or `write_file`
+2. Call `update_note("TypeName", "<notes content>")` to write purpose, behaviours, and work log
 3. After running `build_graph`, call `sync_note_structure("TypeName")` to refresh Methods/Properties/Injections while keeping your notes intact
 4. Notes are never overwritten by `build_graph` or `build_obsidian_vault`
 

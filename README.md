@@ -79,6 +79,7 @@ search               → keyword search across everything
 build_graph          → trigger an incremental or full rebuild from inside the agent
 build_obsidian_vault → export the graph as an Obsidian vault for visual exploration
 get_or_create_note   → get or create a persistent knowledge note for a type
+update_note          → write the ## Notes section (purpose, behaviours, work log)
 sync_note_structure  → refresh a note's structure after a graph rebuild
 ```
 
