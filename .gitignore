@@ -18,3 +18,4 @@ dotnet_graph/analyzer/obj/
 *.db
 *.db-wal
 *.db-shm
+.idea
