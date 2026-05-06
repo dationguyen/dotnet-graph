@@ -356,53 +356,63 @@ def sync_note(type_name: str, root: Optional[str], db: Optional[str], notes: Opt
               type=click.Choice(["project", "local", "user"]), show_default=True,
               help="Claude Code MCP scope: local=this project (git-ignored), "
                    "project=shared with team, user=all your projects")
+@click.option("--agent", default="claude",
+              type=click.Choice(["claude", "cursor", "all"]),
+              show_default=True,
+              help="AI coding tool to configure: claude, cursor, or all")
 @click.option("--skip-build", is_flag=True, default=False,
               help="Skip building the knowledge graph")
 @click.option("--skip-claude-md", is_flag=True, default=False,
-              help="Skip patching CLAUDE.md with dotnet-graph instructions")
+              help="Skip patching rules files (CLAUDE.md, .cursorrules, AGENTS.md)")
 def install(root: Optional[str], db: Optional[str], transport: str,
-            host: str, port: int, scope: str, skip_build: bool,
-            skip_claude_md: bool) -> None:
+            host: str, port: int, scope: str, agent: str,
+            skip_build: bool, skip_claude_md: bool) -> None:
     """Set up dotnet-graph for AI coding tools in one command.
 
     \b
     What this does:
       1. Auto-detects the solution root from your current directory
       2. Builds the knowledge graph (incremental if DB already exists)
-      3. Registers with Claude Code via `claude mcp add` (if available)
-      4. Writes .mcp.json as a fallback for other MCP-compatible tools
-      5. Patches CLAUDE.md with dotnet-graph tool instructions for AI agents
+      3. Registers the MCP server with your AI coding tool
+      4. Patches the agent rules file with dotnet-graph tool instructions
 
     \b
     Examples:
-      dotnet-graph install                  # run from anywhere in your .NET repo
-      dotnet-graph install --scope user     # register globally in Claude Code
-      dotnet-graph install --skip-build     # config only, skip the graph build
-      dotnet-graph install --skip-claude-md # skip CLAUDE.md patching
+      dotnet-graph install                   # Claude Code (default)
+      dotnet-graph install --agent cursor    # Cursor
+      dotnet-graph install --agent all       # Claude Code + Cursor
+      dotnet-graph install --scope user      # register globally in Claude Code
+      dotnet-graph install --skip-build      # config only, skip the graph build
     """
     root_path = _resolve_root(root)
-    claude = shutil.which("claude") if transport == "stdio" else None
     db_path = _db_for(root_path, db)
 
-    click.echo(f"Setting up dotnet-graph for {root_path}\n")
+    click.echo(f"Setting up dotnet-graph for {root_path} (agent: {agent})\n")
 
     # Step 1: Build
     if not skip_build:
         _do_build(root_path, db_path)
         click.echo("")
 
-    # Step 2: Claude Code native registration
-    if claude:
-        _try_claude_mcp_add(claude, root_path, db_path, scope)
-    else:
-        click.echo("[2/3] Claude Code CLI not found — skipping claude mcp add")
+    # Step 2: MCP registration
+    if agent in ("claude", "all"):
+        claude = shutil.which("claude") if transport == "stdio" else None
+        if claude:
+            _try_claude_mcp_add(claude, root_path, db_path, scope)
+        else:
+            click.echo("[ ] Claude Code CLI not found — skipping claude mcp add")
+        _write_mcp_json(root_path, db_path, transport, host, port)
 
-    # Step 3: .mcp.json fallback
-    _write_mcp_json(root_path, db_path, transport, host, port)
+    if agent in ("cursor", "all"):
+        _write_cursor_mcp_json(root_path, db_path, transport, host, port)
 
-    # Step 4: Patch CLAUDE.md
+    # Step 3: Rules files
     if not skip_claude_md:
-        _patch_claude_md(root_path)
+        if agent in ("claude", "all"):
+            _patch_rules_file(root_path / "CLAUDE.md")
+        if agent in ("cursor", "all"):
+            _patch_rules_file(root_path / ".cursorrules")
+            _patch_rules_file(root_path / "AGENTS.md")
 
     click.echo("\nDone. Restart your AI coding tool to pick up the new config.")
 
@@ -487,7 +497,7 @@ A Roslyn-powered knowledge graph lives at `.dotnet-graph/knowledge.db`, built by
 - Who injects a service (constructor injection)
 - What a method calls, or what calls a given method
 
-The `dotnet-graph` MCP server is configured in `.mcp.json`. If unavailable, fall back to `Grep` but note it to the user.
+The `dotnet-graph` MCP server is configured in `.mcp.json` (or `.cursor/mcp.json` for Cursor). If unavailable, fall back to `Grep` but note it to the user.
 
 ### Tool selection
 
@@ -548,20 +558,50 @@ What this type does in business terms.
 """
 
 
-def _patch_claude_md(root_path: Path) -> None:
-    claude_md = root_path / "CLAUDE.md"
+def _write_cursor_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, port: int) -> None:
+    import json
 
-    if claude_md.exists():
-        content = claude_md.read_text()
-        if _CLAUDE_MD_MARKER in content:
-            click.echo("[4/4] CLAUDE.md already contains dotnet-graph instructions — skipping")
-            return
-        updated = content.rstrip("\n") + "\n\n" + _CLAUDE_MD_SECTION
-        claude_md.write_text(updated)
-        click.echo(f"[4/4] Appended dotnet-graph instructions to {claude_md}")
+    cursor_dir = root_path / ".cursor"
+    cursor_dir.mkdir(exist_ok=True)
+    mcp_file = cursor_dir / "mcp.json"
+
+    config: dict = {}
+    if mcp_file.exists():
+        try:
+            config = json.loads(mcp_file.read_text())
+        except Exception:
+            config = {}
+
+    config.setdefault("mcpServers", {})
+
+    if transport == "http":
+        config["mcpServers"]["dotnet-graph"] = {
+            "url": f"http://{host}:{port}/sse",
+            "type": "sse",
+        }
+        click.echo(f"[ ] Wrote {mcp_file} (HTTP/SSE → {host}:{port})")
     else:
-        claude_md.write_text(_CLAUDE_MD_SECTION)
-        click.echo(f"[4/4] Created {claude_md} with dotnet-graph instructions")
+        config["mcpServers"]["dotnet-graph"] = {
+            "command": "uvx",
+            "args": ["dotnet-graph", "serve", "--root", str(root_path), "--db", str(db_path)],
+        }
+        click.echo(f"[ ] Wrote {mcp_file} (db: {db_path})")
+
+    mcp_file.write_text(json.dumps(config, indent=2))
+
+
+def _patch_rules_file(path: Path) -> None:
+    name = path.name
+    if path.exists():
+        content = path.read_text()
+        if _CLAUDE_MD_MARKER in content:
+            click.echo(f"[ ] {name} already contains dotnet-graph instructions — skipping")
+            return
+        path.write_text(content.rstrip("\n") + "\n\n" + _CLAUDE_MD_SECTION)
+        click.echo(f"[ ] Appended dotnet-graph instructions to {path}")
+    else:
+        path.write_text(_CLAUDE_MD_SECTION)
+        click.echo(f"[ ] Created {path} with dotnet-graph instructions")
 
 
 # ── update ─────────────────────────────────────────────────────────────────────
