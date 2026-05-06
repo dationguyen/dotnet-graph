@@ -262,6 +262,84 @@ def obsidian(root: Optional[str], db: Optional[str], vault: Optional[str]) -> No
     click.echo("Open that folder in Obsidian and switch to Graph View.")
 
 
+# ── note ───────────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.argument("type_name")
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(), help="Database path")
+@click.option("--notes", default=None, type=click.Path(),
+              help="Notes directory (default: <root>/.dotnet-graph/notes)")
+def note(type_name: str, root: Optional[str], db: Optional[str], notes: Optional[str]) -> None:
+    """Get or create an enriched knowledge note for a type.
+
+    If the note already exists, prints its current content.
+    If not, creates one from graph data with an empty Notes section.
+
+    Notes live in .dotnet-graph/notes/<Domain>/<TypeName>.md and are
+    maintained by AI agents as they read and modify the codebase.
+    """
+    from dotnet_graph.notes import get_or_create_note as _get_or_create
+
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
+    notes_path = Path(notes).resolve() if notes else root_path / ".dotnet-graph" / "notes"
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"No graph found at {db_path}. Run `dotnet-graph build` first."
+        )
+
+    result = _get_or_create(db_path, type_name, notes_path)
+
+    if "error" in result:
+        raise click.ClickException(result["error"])
+
+    status = "Created" if result["created"] else "Found existing"
+    click.echo(f"{status} note: {result['path']}\n")
+    click.echo(result["content"])
+
+
+@cli.command()
+@click.argument("type_name")
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(), help="Database path")
+@click.option("--notes", default=None, type=click.Path(),
+              help="Notes directory (default: <root>/.dotnet-graph/notes)")
+def sync_note(type_name: str, root: Optional[str], db: Optional[str], notes: Optional[str]) -> None:
+    """Refresh a note's structure from current graph data, preserving ## Notes.
+
+    Re-generates Methods, Properties, Injections, and Inheritance sections from
+    the live graph. The ## Notes section (purpose, business logic, work log) is
+    never touched. Creates the note first if it doesn't exist yet.
+    """
+    from dotnet_graph.notes import sync_note_structure as _sync
+
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
+    notes_path = Path(notes).resolve() if notes else root_path / ".dotnet-graph" / "notes"
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"No graph found at {db_path}. Run `dotnet-graph build` first."
+        )
+
+    result = _sync(db_path, type_name, notes_path)
+
+    if "error" in result:
+        raise click.ClickException(result["error"])
+
+    if result.get("created"):
+        click.echo(f"Created note: {result['path']}\n")
+    elif result.get("refreshed"):
+        click.echo(f"Refreshed note: {result['path']}\n")
+    else:
+        click.echo(f"No standard marker found — returned unchanged: {result['path']}\n")
+    click.echo(result["content"])
+
+
 # ── install ────────────────────────────────────────────────────────────────────
 
 @cli.command()
@@ -427,6 +505,8 @@ The `dotnet-graph` MCP server is configured in `.mcp.json`. If unavailable, fall
 | Keyword search across types/methods | `search` |
 | Graph stats / health check | `get_stats` |
 | Generate Obsidian vault | `build_obsidian_vault` |
+| Get/create enriched knowledge note | `get_or_create_note` |
+| Refresh note structure after graph rebuild | `sync_note_structure` |
 | Rebuild the graph | `build_graph` |
 
 ### Workflow
@@ -437,6 +517,34 @@ The `dotnet-graph` MCP server is configured in `.mcp.json`. If unavailable, fall
 4. `get_method_calls` — trace execution flow within a method
 5. `find_callers` — all callers of a method across the codebase
 6. Fall back to `Grep` only if the graph doesn't have what you need.
+
+### Knowledge Notes
+
+Enriched notes live in `.dotnet-graph/notes/<Domain>/<TypeName>.md` and persist across sessions.
+
+**When to use `get_or_create_note`:**
+- After reading a source file — record the type's purpose and key behaviours
+- After making a change — add a work log entry with the ticket and what changed
+- When you discover something non-obvious — gotchas, invariants, business rules
+
+**Workflow:**
+1. Call `get_or_create_note("TypeName")` — creates the note if it doesn't exist yet
+2. Edit the `## Notes` section using the obsidian MCP's `edit_file` or `write_file`
+3. After running `build_graph`, call `sync_note_structure("TypeName")` to refresh Methods/Properties/Injections while keeping your notes intact
+4. Notes are never overwritten by `build_graph` or `build_obsidian_vault`
+
+**Note format:**
+```
+## Notes
+### Purpose
+What this type does in business terms.
+
+### Key Behaviours
+- Notable patterns, invariants, gotchas
+
+### Work Log
+- **SMA-XXXX** (YYYY-MM-DD): what changed and why
+```
 """
 
 

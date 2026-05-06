@@ -32,6 +32,68 @@ def register_build_tools(mcp, get_db_path: Callable[[], Path]) -> None:
         )
 
     @mcp.tool()
+    def get_or_create_note(type_name: str, notes_dir: str = "") -> str:
+        """Get or create an enriched knowledge note for a type.
+
+        Notes live in .dotnet-graph/notes/<Domain>/<TypeName>.md. Each note has
+        the structural data from the graph (methods, DI, inheritance) plus a
+        ## Notes section for AI-maintained context (purpose, business logic,
+        gotchas, work log).
+
+        Call this when you read or modify a type. If the note already exists,
+        returns its current content. If not, creates one from graph data with an
+        empty Notes section ready to fill in. Edit the Notes section using the
+        obsidian MCP's edit_file or write_file tools.
+
+        type_name: class or interface name (partial or full match)
+        notes_dir: notes directory (default: <root>/.dotnet-graph/notes)
+        """
+        from dotnet_graph.notes import get_or_create_note as _impl
+
+        db_path = get_db_path()
+        if not db_path or not db_path.exists():
+            return "No graph found. Run build_graph first."
+
+        notes_path = Path(notes_dir).resolve() if notes_dir else db_path.parent / "notes"
+        result = _impl(db_path, type_name, notes_path)
+
+        if "error" in result:
+            return result["error"]
+
+        status = "Created" if result["created"] else "Existing"
+        return f"{status} note: `{result['path']}`\n\n{result['content']}"
+
+    @mcp.tool()
+    def sync_note_structure(type_name: str, notes_dir: str = "") -> str:
+        """Refresh the structural section of a knowledge note from current graph data.
+
+        Re-generates Methods, Properties, Injections, and Inheritance from the
+        live graph while preserving the entire ## Notes section (purpose, business
+        logic, work log). Call this after running build_graph if the type's
+        structure has changed. Creates the note first if it doesn't exist yet.
+
+        type_name: class or interface name (partial or full match)
+        notes_dir: notes directory (default: <root>/.dotnet-graph/notes)
+        """
+        from dotnet_graph.notes import sync_note_structure as _impl
+
+        db_path = get_db_path()
+        if not db_path or not db_path.exists():
+            return "No graph found. Run build_graph first."
+
+        notes_path = Path(notes_dir).resolve() if notes_dir else db_path.parent / "notes"
+        result = _impl(db_path, type_name, notes_path)
+
+        if "error" in result:
+            return result["error"]
+
+        if result.get("created"):
+            return f"Created note: `{result['path']}`\n\n{result['content']}"
+        if result.get("refreshed"):
+            return f"Refreshed note: `{result['path']}`\n\n{result['content']}"
+        return f"Note has no standard marker — returned unchanged: `{result['path']}`\n\n{result['content']}"
+
+    @mcp.tool()
     def build_graph(root: str) -> str:
         """Build (or rebuild) the knowledge graph for a .NET solution.
 

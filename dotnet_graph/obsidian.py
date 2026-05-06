@@ -9,25 +9,10 @@ Each type becomes a markdown note with YAML frontmatter and WikiLinks for:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from .db import open_db
-
-
-def _safe_filename(name: str) -> str:
-    name = re.sub(r"<[^>]*>", "", name)
-    name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    return name.strip()
-
-
-def _wikilink(full_name: str) -> str:
-    short = full_name.split(".")[-1] if "." in full_name else full_name
-    short = re.sub(r"<[^>]*>", "", short)
-    safe_full = _safe_filename(full_name)
-    if short == safe_full:
-        return f"[[{short}]]"
-    return f"[[{safe_full}|{short}]]"
+from ._render import _safe_filename, _type_lines
 
 
 def build_vault(db_path: Path, vault_path: Path, verbose: bool = False) -> int:
@@ -86,88 +71,14 @@ def build_vault(db_path: Path, vault_path: Path, verbose: bool = False) -> int:
         full_name = t["full_name"] or t["name"]
         note_path = vault_path / f"{_safe_filename(full_name)}.md"
 
-        lines: list[str] = []
-
-        # Frontmatter — skip domain if it looks like a path artifact
-        domain = t["domain"]
-        if domain and (domain.startswith(".") or "/" in domain or "\\" in domain):
-            domain = None
-
-        tags = [t["kind"] or "type"]
-        if domain:
-            tags.append(domain.lower().replace(" ", "-"))
-        if t["name"].endswith("ViewModel"):
-            tags.append("viewmodel")
-        elif t["kind"] == "interface":
-            tags.append("interface")
-
-        lines += ["---"]
-        lines += [f"kind: {t['kind'] or 'type'}"]
-        if t["namespace"]:
-            lines += [f"namespace: \"{t['namespace']}\""]
-        if t["project_name"]:
-            lines += [f"project: \"{t['project_name']}\""]
-        if domain:
-            lines += [f"domain: \"{domain}\""]
-        lines += [f"tags: [{', '.join(tags)}]"]
-        lines += ["---", ""]
-        lines += [f"# {t['name']}", ""]
-
-        if t["project_name"]:
-            lines += [f"**Project:** {t['project_name']}  "]
-        if t["namespace"]:
-            lines += [f"**Namespace:** `{t['namespace']}`  "]
-        if t["file_path"]:
-            lines += [f"**File:** `{t['file_path']}`  "]
-        lines += [""]
-
-        # Inherits / Implements
-        bases = type_bases.get(full_name, [])
-        if bases:
-            lines += ["## Inherits / Implements"]
-            for to_type, kind in bases:
-                lines += [f"- *{kind}* → {_wikilink(to_type)}"]
-            lines += [""]
-
-        # Constructor Injections
-        injects = type_injects.get(full_name, [])
-        if injects:
-            lines += ["## Constructor Injections"]
-            for param_type, param_name in injects:
-                lines += [f"- `{param_name}` : {_wikilink(param_type)}"]
-            lines += [""]
-
-        # Injected By
-        users = sorted(injected_by.get(full_name, set()))
-        if users:
-            lines += ["## Injected By"]
-            for user in users[:20]:
-                lines += [f"- {_wikilink(user)}"]
-            if len(users) > 20:
-                lines += [f"- *(and {len(users) - 20} more)*"]
-            lines += [""]
-
-        # Methods
-        methods = type_methods.get(t["id"], [])
-        if methods:
-            lines += ["## Methods"]
-            lines += ["| Name | Returns | Async | Visibility |"]
-            lines += ["|------|---------|-------|------------|"]
-            for m in sorted(methods, key=lambda x: x["line"] or 0):
-                async_mark = "✓" if m["is_async"] else ""
-                ret = m["return_type"] or ""
-                vis = m["visibility"] or "public"
-                lines += [f"| `{m['name']}` | `{ret}` | {async_mark} | {vis} |"]
-            lines += [""]
-
-        # Properties
-        props = type_props.get(t["id"], [])
-        if props:
-            lines += ["## Properties"]
-            for p in sorted(props, key=lambda x: x["line"] or 0):
-                vis = p["visibility"] or "public"
-                lines += [f"- `{p['name']}` : `{p['type_name']}` *({vis})*"]
-            lines += [""]
+        lines = _type_lines(
+            t,
+            bases=type_bases.get(full_name, []),
+            injects=type_injects.get(full_name, []),
+            injectors=sorted(injected_by.get(full_name, set())),
+            methods=type_methods.get(t["id"], []),
+            props=type_props.get(t["id"], []),
+        )
 
         note_path.write_text("\n".join(lines), encoding="utf-8")
         written += 1
