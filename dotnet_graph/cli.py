@@ -26,7 +26,7 @@ def _check_for_update() -> None:
         cached: dict = {}
         if cache_file.exists():
             try:
-                cached = json.loads(cache_file.read_text())
+                cached = json.loads(cache_file.read_text(encoding="utf-8"))
             except Exception:
                 pass
 
@@ -39,7 +39,7 @@ def _check_for_update() -> None:
                 "https://pypi.org/pypi/dotnet-graph/json", timeout=2
             ) as resp:
                 latest = json.loads(resp.read())["info"]["version"]
-            cache_file.write_text(json.dumps({"checked_on": today, "latest": latest}))
+            cache_file.write_text(json.dumps({"checked_on": today, "latest": latest}), encoding="utf-8")
 
         from packaging.version import Version
         if Version(latest) > Version(__version__):
@@ -417,7 +417,7 @@ def _apply_claude_hooks(settings_path: Path, dry_run: bool) -> list[str]:
     config: dict = {}
     if settings_path.exists():
         try:
-            config = json.loads(settings_path.read_text())
+            config = json.loads(settings_path.read_text(encoding="utf-8"))
         except Exception:
             pass
 
@@ -442,7 +442,7 @@ def _apply_claude_hooks(settings_path: Path, dry_run: bool) -> list[str]:
 
     if changed:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings_path.write_text(json.dumps(config, indent=2))
+        settings_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     return msgs
 
@@ -612,7 +612,7 @@ def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, p
     config: dict = {}
     if mcp_file.exists():
         try:
-            config = json.loads(mcp_file.read_text())
+            config = json.loads(mcp_file.read_text(encoding="utf-8"))
         except Exception:
             config = {}
 
@@ -633,7 +633,7 @@ def _write_mcp_json(root_path: Path, db_path: Path, transport: str, host: str, p
         }
         click.echo(f"[3/3] Wrote {mcp_file} (db: {db_path})")
 
-    mcp_file.write_text(json.dumps(config, indent=2))
+    mcp_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 _CLAUDE_MD_MARKER = "<!-- dotnet-graph -->"
@@ -726,7 +726,7 @@ def _write_cursor_mcp_json(root_path: Path, db_path: Path, transport: str, host:
     config: dict = {}
     if mcp_file.exists():
         try:
-            config = json.loads(mcp_file.read_text())
+            config = json.loads(mcp_file.read_text(encoding="utf-8"))
         except Exception:
             config = {}
 
@@ -745,20 +745,20 @@ def _write_cursor_mcp_json(root_path: Path, db_path: Path, transport: str, host:
         }
         click.echo(f"[ ] Wrote {mcp_file} (db: {db_path})")
 
-    mcp_file.write_text(json.dumps(config, indent=2))
+    mcp_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 def _patch_rules_file(path: Path) -> None:
     name = path.name
     if path.exists():
-        content = path.read_text()
+        content = path.read_text(encoding="utf-8")
         if _CLAUDE_MD_MARKER in content:
             click.echo(f"[ ] {name} already contains dotnet-graph instructions — skipping")
             return
-        path.write_text(content.rstrip("\n") + "\n\n" + _CLAUDE_MD_SECTION)
+        path.write_text(content.rstrip("\n") + "\n\n" + _CLAUDE_MD_SECTION, encoding="utf-8")
         click.echo(f"[ ] Appended dotnet-graph instructions to {path}")
     else:
-        path.write_text(_CLAUDE_MD_SECTION)
+        path.write_text(_CLAUDE_MD_SECTION, encoding="utf-8")
         click.echo(f"[ ] Created {path} with dotnet-graph instructions")
 
 

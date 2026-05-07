@@ -22,6 +22,12 @@ pip install dotnet-graph
 
 > **macOS with uv:** If `pip install` fails because uv intercepts it, use `uv tool install dotnet-graph` instead. This creates an isolated environment and puts `dotnet-graph` on your PATH.
 
+> **Windows:** If `dotnet-graph` is not found after install, pip's `Scripts` folder is likely missing from your PATH. The quickest fix is to use [pipx](https://pipx.pypa.io/) instead — it handles PATH automatically:
+> ```
+> pipx install dotnet-graph
+> ```
+> Alternatively, add `%APPDATA%\Python\Python3xx\Scripts` to your user PATH via System → Environment Variables, then restart your terminal.
+
 ## Setup
 
 Run once from anywhere inside your .NET repo:
