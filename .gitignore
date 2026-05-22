@@ -19,3 +19,4 @@ dotnet_graph/analyzer/obj/
 *.db-wal
 *.db-shm
 .idea
+settings.local.json
