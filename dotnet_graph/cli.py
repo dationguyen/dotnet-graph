@@ -413,6 +413,26 @@ def _claude_settings_path(root_path: Path, scope: str) -> Path:
         return root_path / ".claude" / "settings.json"
 
 
+def _install_skills(root_path: Path, dry_run: bool) -> list[str]:
+    """Copy bundled Claude Code skills into <root>/.claude/skills/."""
+    skills_src = Path(__file__).parent / "skills"
+    skills_dst = root_path / ".claude" / "skills"
+    msgs: list[str] = []
+
+    for skill_file in sorted(skills_src.glob("*.md")):
+        dest = skills_dst / skill_file.name
+        if dest.exists():
+            msgs.append(f"[=] {skill_file.name}: already installed — skipping")
+        else:
+            if not dry_run:
+                skills_dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(skill_file, dest)
+            verb = "would install" if dry_run else "installed"
+            msgs.append(f"[+] {skill_file.name}: {verb}")
+
+    return msgs
+
+
 def _apply_claude_hooks(settings_path: Path, dry_run: bool) -> list[str]:
     config: dict = {}
     if settings_path.exists():
@@ -491,6 +511,12 @@ def configure_claude(root: Optional[str], scope: str, dry_run: bool) -> None:
     for msg in msgs:
         click.echo(f"  {msg}")
 
+    if scope != "user":
+        click.echo("")
+        skill_msgs = _install_skills(root_path, dry_run)
+        for msg in skill_msgs:
+            click.echo(f"  {msg}")
+
     if not dry_run:
         click.echo("\nDone. Restart Claude Code to pick up the new hooks.")
     else:
@@ -531,7 +557,8 @@ def install(root: Optional[str], db: Optional[str], transport: str,
       1. Auto-detects the solution root from your current directory
       2. Builds the knowledge graph (incremental if DB already exists)
       3. Registers the MCP server with your AI coding tool
-      4. Patches the agent rules file with dotnet-graph tool instructions
+      4. Installs Claude Code skills (.claude/skills/dotnet-*.md)
+      5. Patches the agent rules file with dotnet-graph tool instructions
 
     \b
     Examples:
@@ -563,7 +590,14 @@ def install(root: Optional[str], db: Optional[str], transport: str,
     if agent in ("cursor", "all"):
         _write_cursor_mcp_json(root_path, db_path, transport, host, port)
 
-    # Step 3: Rules files
+    # Step 3: Skills
+    if agent in ("claude", "all"):
+        click.echo("")
+        skill_msgs = _install_skills(root_path, dry_run=False)
+        for msg in skill_msgs:
+            click.echo(f"       {msg}")
+
+    # Step 4: Rules files
     if not skip_claude_md:
         if agent in ("claude", "all"):
             _patch_rules_file(root_path / "CLAUDE.md")
