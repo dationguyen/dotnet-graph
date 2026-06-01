@@ -32,6 +32,35 @@ def register_build_tools(mcp, get_db_path: Callable[[], Path]) -> None:
         )
 
     @mcp.tool()
+    def build_explore_dashboard(out_dir: str = "") -> str:
+        """Generate the interactive "explore" dashboard from the knowledge graph.
+
+        Produces a self-contained web app (index.html + data.js) that presents the
+        codebase by architectural layer (UI/Presentation/API/Service/Data/Model/
+        Infrastructure), with a plain-English summary on every type, dependency-
+        ordered guided tours, a domain/business-flow view, and reference tables.
+        Reuses any enriched knowledge notes for the type summaries. Open the
+        index.html in a browser — no server needed.
+
+        out_dir: output directory (default: <root>/.dotnet-graph/explore)
+        """
+        from dotnet_graph.explore import build_dashboard
+
+        db_path = get_db_path()
+        if not db_path or not db_path.exists():
+            return "No graph found. Run build_graph first."
+
+        out = Path(out_dir).resolve() if out_dir else db_path.parent / "explore"
+        notes = db_path.parent / "notes"
+        stats = build_dashboard(db_path, out, notes, verbose=False)
+        return (
+            f"Dashboard built → `{out / 'index.html'}`\n\n"
+            f"{stats['types']} types · {stats['edges']} relationships · {stats['tours']} tours · "
+            f"{stats['summariesFromNotes']}/{stats['types']} summaries from notes.\n"
+            f"Open `{out / 'index.html'}` in a browser."
+        )
+
+    @mcp.tool()
     def get_or_create_note(type_name: str, notes_dir: str = "") -> str:
         """Get or create an enriched knowledge note for a type.
 

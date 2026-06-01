@@ -159,3 +159,19 @@ Generate an Obsidian vault from the current graph.
 build_obsidian_vault()
 build_obsidian_vault(vault_path="/path/to/output")
 ```
+
+## build_explore_dashboard
+
+Generate the interactive **explore** dashboard — a self-contained web app
+(`index.html` + `data.js`) that maps the codebase by architectural layer
+(UI / Presentation / API / Service / Data / Model / Infrastructure), gives every
+type a plain-English summary (reusing knowledge notes where they exist), builds
+dependency-ordered guided tours, and lays each domain out as a left-to-right flow.
+No server needed — open the `index.html` in a browser.
+
+```
+build_explore_dashboard()
+build_explore_dashboard(out_dir="/path/to/output")
+```
+
+Output defaults to `<root>/.dotnet-graph/explore`.

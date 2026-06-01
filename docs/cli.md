@@ -185,3 +185,20 @@ dotnet-graph obsidian [--root <path>] [--vault <output-dir>]
 ```
 
 Output defaults to `<root>/.dotnet-graph/obsidian`. Open the folder in Obsidian and switch to Graph View.
+
+---
+
+## explore
+
+Build the interactive **explore** dashboard — a self-contained web app that maps
+the codebase by architectural layer, gives every type a plain-English summary,
+builds dependency-ordered guided tours, and lays domains out as a left-to-right
+flow. No server needed.
+
+```bash
+dotnet-graph explore [--root <path>] [--out <output-dir>] [--notes <notes-dir>] [--open]
+```
+
+Output defaults to `<root>/.dotnet-graph/explore`. Summaries reuse any enriched
+knowledge notes (`<root>/.dotnet-graph/notes`); types without a note get a
+deterministic one-liner. Pass `--open` to launch it in your browser.

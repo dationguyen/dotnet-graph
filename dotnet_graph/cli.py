@@ -262,6 +262,52 @@ def obsidian(root: Optional[str], db: Optional[str], vault: Optional[str]) -> No
     click.echo("Open that folder in Obsidian and switch to Graph View.")
 
 
+# ── explore ──────────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--root", default=None, type=click.Path(exists=True, file_okay=False),
+              help="Solution root (auto-detected from CWD if omitted)")
+@click.option("--db", default=None, type=click.Path(),
+              help="Database path (default: <root>/.dotnet-graph/knowledge.db)")
+@click.option("--out", default=None, type=click.Path(),
+              help="Output directory (default: <root>/.dotnet-graph/explore)")
+@click.option("--notes", default=None, type=click.Path(),
+              help="Notes directory to source summaries from (default: <root>/.dotnet-graph/notes)")
+@click.option("--open", "open_browser", is_flag=True, default=False,
+              help="Open the dashboard in your browser when done")
+def explore(root: Optional[str], db: Optional[str], out: Optional[str],
+            notes: Optional[str], open_browser: bool) -> None:
+    """Build the interactive 'explore' dashboard from the knowledge graph.
+
+    Generates a self-contained web app (index.html + data.js) that maps the
+    codebase by architectural layer, gives every type a plain-English summary,
+    builds dependency-ordered guided tours, and lays domains out as a left-to-right
+    flow. Reuses enriched knowledge notes for the best summaries. No server needed —
+    just open the index.html.
+    """
+    from dotnet_graph.explore import build_dashboard
+
+    root_path = _resolve_root(root)
+    db_path = _db_for(root_path, db)
+    out_path = Path(out).resolve() if out else root_path / ".dotnet-graph" / "explore"
+    notes_path = Path(notes).resolve() if notes else root_path / ".dotnet-graph" / "notes"
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"No graph found at {db_path}. Run `dotnet-graph build` first."
+        )
+
+    click.echo(f"Building explore dashboard → {out_path}")
+    build_dashboard(db_path, out_path, notes_path, verbose=True)
+
+    index = out_path / "index.html"
+    if open_browser:
+        import webbrowser
+        webbrowser.open(index.as_uri())
+    else:
+        click.echo(f"Open in a browser: {index}")
+
+
 # ── note ───────────────────────────────────────────────────────────────────────
 
 @cli.command()

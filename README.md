@@ -94,6 +94,7 @@ get_stats            → build metadata and row counts for the knowledge graph
 search               → keyword search across everything
 build_graph          → trigger an incremental or full rebuild from inside the agent
 build_obsidian_vault → export the graph as an Obsidian vault for visual exploration
+build_explore_dashboard → build the interactive "explore" dashboard (layers, summaries, tours)
 get_or_create_note   → get or create a persistent knowledge note for a type
 update_note          → write the ## Notes section (purpose, behaviours, work log)
 sync_note_structure  → refresh a note's structure after a graph rebuild
@@ -133,6 +134,31 @@ rebuild the graph
 dotnet-graph obsidian
 ```
 Or ask your agent: *"export the graph to Obsidian"* — it calls `build_obsidian_vault` directly.
+
+## Explore dashboard
+
+Build a self-contained, interactive web app that teaches you how the codebase fits
+together — no server, just open the HTML:
+
+```bash
+dotnet-graph explore --open
+```
+
+![Explore dashboard — dependency map coloured by architectural layer](docs/images/explore-map.png)
+
+Click any type for a plain-English summary, its layer, relationships, and members:
+
+![Explore dashboard — type detail drawer](docs/images/explore-drawer.png)
+
+*(Screenshots are of the bundled `tests/fixtures/SampleSolution`. On a real
+solution the map groups types into clickable module clusters.)*
+
+It maps every type by **architectural layer** (UI, Presentation, API, Service, Data,
+Model, Infrastructure), gives each one a **plain-English summary** (reusing your
+knowledge notes where they exist, with a deterministic fallback otherwise), generates
+**dependency-ordered guided tours** (one per feature, plus an app-startup tour), and
+lays each domain out as a **left-to-right flow**. Output goes to
+`.dotnet-graph/explore/`. Your agent can build it too via `build_explore_dashboard`.
 
 ## Development
 

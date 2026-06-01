@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Explore — codebase atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="https://unpkg.com/layout-base/layout-base.js"></script>
+<script src="https://unpkg.com/cose-base/cose-base.js"></script>
+<script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="data.js"></script>
+<style>
+:root{
+  --paper:#f3efe6; --paper-2:#ece6d9; --card:#faf7f0; --line:#ddd5c5; --line-2:#cfc6b2;
+  --ink:#252019; --ink-2:#5c5345; --ink-3:#8a7f6c;
+  --accent:#1f6f78; --accent-ink:#0f4248; --ochre:#bd6a2c;
+  --shadow:0 1px 2px rgba(60,48,30,.06), 0 8px 28px rgba(60,48,30,.10);
+  --radius:13px;
+  --serif:"Fraunces",Georgia,serif; --sans:"Hanken Grotesk",system-ui,sans-serif; --mono:"JetBrains Mono",monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased;}
+::selection{background:#1f6f7833;}
+#app{display:grid;grid-template-columns:268px 1fr;height:100vh;overflow:hidden;}
+
+/* ---------- sidebar ---------- */
+#rail{background:linear-gradient(180deg,var(--paper-2),var(--paper));border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
+.brand{padding:22px 22px 14px;}
+.brand .logo{display:flex;align-items:center;gap:10px;}
+.brand .mark{width:30px;height:30px;border-radius:8px;background:radial-gradient(circle at 30% 30%,var(--accent),var(--accent-ink));position:relative;flex:none;box-shadow:inset 0 0 0 1px #ffffff22;}
+.brand .mark::after{content:"";position:absolute;inset:7px;border:1.5px solid #ffffffcc;border-radius:50%;border-right-color:transparent;border-bottom-color:transparent;transform:rotate(20deg);}
+.brand h1{font-family:var(--serif);font-weight:600;font-size:23px;margin:0;letter-spacing:-.5px;}
+.brand .tag{font-size:11.5px;color:var(--ink-3);margin-top:3px;letter-spacing:.2px;}
+.brand .repo{margin-top:11px;font-family:var(--mono);font-size:10.5px;color:var(--ink-2);background:#fff8;border:1px solid var(--line);border-radius:7px;padding:5px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+nav.views{padding:6px 14px 4px;display:flex;flex-direction:column;gap:2px;}
+nav.views a{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--ink-2);text-decoration:none;font-weight:500;cursor:pointer;border:1px solid transparent;}
+nav.views a .ic{width:17px;text-align:center;opacity:.7;font-size:15px;}
+nav.views a:hover{background:#fff7;color:var(--ink);}
+nav.views a.active{background:var(--card);color:var(--accent-ink);border-color:var(--line);box-shadow:var(--shadow);font-weight:600;}
+nav.views a.active .ic{opacity:1;}
+
+.rail-body{flex:1;min-height:0;overflow-y:auto;padding:12px 18px 22px;}
+.rail-body::-webkit-scrollbar{width:8px;} .rail-body::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px;}
+.sec{font-family:var(--serif);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1.4px;color:var(--ink-3);margin:18px 0 9px;}
+.sec:first-child{margin-top:2px;}
+input[type=search],input.f{width:100%;padding:9px 11px;border:1px solid var(--line-2);border-radius:9px;background:#fffdf8;color:var(--ink);font-family:var(--sans);font-size:13px;}
+input[type=search]:focus,input.f:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px #1f6f7820;}
+
+.toggle{display:flex;background:var(--paper-2);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px;margin-top:4px;}
+.toggle button{flex:1;border:0;background:transparent;padding:6px 8px;border-radius:7px;font-family:var(--sans);font-weight:600;font-size:12px;color:var(--ink-2);cursor:pointer;}
+.toggle button.on{background:var(--card);color:var(--accent-ink);box-shadow:var(--shadow);}
+
+.legend{display:flex;flex-direction:column;gap:1px;}
+.legend .row{display:flex;align-items:center;gap:9px;padding:5px 7px;border-radius:7px;cursor:pointer;user-select:none;}
+.legend .row:hover{background:#fff8;}
+.legend .row.off{opacity:.32;}
+.legend .row .sw{width:11px;height:11px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px #00000018;}
+.legend .row .lb{font-weight:600;font-size:12.5px;}
+.legend .row .ct{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);}
+.legend .desc{font-size:11px;color:var(--ink-3);padding:0 7px 6px 27px;line-height:1.4;display:none;}
+.legend .row.show + .desc{display:block;}
+
+.chk{display:flex;align-items:center;gap:9px;padding:6px 7px;cursor:pointer;font-size:12.5px;color:var(--ink-2);}
+.chk input{accent-color:var(--accent);}
+.minibtn{display:block;width:100%;text-align:left;padding:8px 11px;margin-top:6px;border:1px solid var(--line-2);border-radius:9px;background:#fffdf8;color:var(--ink-2);font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer;}
+.minibtn:hover{border-color:var(--accent);color:var(--accent-ink);}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.statc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 11px;}
+.statc b{font-family:var(--serif);font-size:21px;font-weight:600;display:block;line-height:1;}
+.statc span{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink-3);}
+
+/* ---------- main ---------- */
+#main{position:relative;min-width:0;overflow:hidden;background:var(--paper);}
+.grid-bg{position:absolute;inset:0;background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:26px 26px;opacity:.5;pointer-events:none;}
+.view{position:absolute;inset:0;display:none;}
+.view.active{display:block;}
+#cy{width:100%;height:100%;}
+.viewhead{position:absolute;top:18px;left:24px;right:24px;display:flex;align-items:flex-end;gap:14px;pointer-events:none;z-index:3;}
+.viewhead h2{font-family:var(--serif);font-size:25px;font-weight:600;margin:0;letter-spacing:-.4px;}
+.viewhead p{margin:2px 0 0;color:var(--ink-2);font-size:13px;max-width:560px;}
+.cyinfo{position:absolute;bottom:16px;left:24px;font-family:var(--mono);font-size:11px;color:var(--ink-3);background:#faf7f0cc;border:1px solid var(--line);border-radius:8px;padding:6px 10px;backdrop-filter:blur(3px);}
+.crumb{position:absolute;top:76px;left:24px;z-index:4;display:flex;align-items:center;gap:9px;background:#faf7f0d9;border:1px solid var(--line);border-radius:9px;padding:7px 13px;backdrop-filter:blur(4px);box-shadow:var(--shadow);font-size:13px;}
+.crumb .now{font-family:var(--serif);font-weight:600;color:var(--ink);}
+.crumb .sep{color:var(--ink-3);}
+.crumb .lk{cursor:pointer;color:var(--accent-ink);font-weight:600;}
+.crumb .lk:hover{text-decoration:underline;}
+
+/* scrollable list views */
+.scroll{position:absolute;inset:0;overflow-y:auto;padding:74px 28px 40px;}
+.scroll::-webkit-scrollbar{width:10px;} .scroll::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:5px;}
+
+/* ---------- tours ---------- */
+.tours-wrap{display:grid;grid-template-columns:300px 1fr;gap:26px;max-width:1180px;}
+.tour-list{display:flex;flex-direction:column;gap:5px;}
+.tour-item{text-align:left;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px 13px;cursor:pointer;}
+.tour-item:hover{border-color:var(--accent);}
+.tour-item.on{border-color:var(--accent);box-shadow:var(--shadow);background:#fff;}
+.tour-item .tt{font-weight:600;font-size:13.5px;}
+.tour-item .tm{font-size:11px;color:var(--ink-3);margin-top:2px;display:flex;gap:7px;}
+.tour-item .badge-startup{color:var(--ochre);font-weight:600;}
+.tour-stage{min-width:0;}
+.stepper{position:relative;margin-left:8px;padding-left:30px;}
+.stepper::before{content:"";position:absolute;left:11px;top:8px;bottom:18px;width:2px;background:linear-gradient(var(--line-2),transparent);}
+.step{position:relative;margin-bottom:14px;cursor:pointer;}
+.step .num{position:absolute;left:-30px;top:2px;width:24px;height:24px;border-radius:50%;background:var(--card);border:2px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--ink-2);}
+.step .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 15px;transition:border-color .15s,transform .15s;}
+.step:hover .card{border-color:var(--accent);transform:translateX(2px);}
+.step .name{font-family:var(--mono);font-size:13.5px;font-weight:600;}
+.step .sum{font-size:12.5px;color:var(--ink-2);margin-top:4px;line-height:1.5;}
+.step .meta{margin-top:7px;display:flex;align-items:center;gap:8px;}
+
+/* ---------- domains ---------- */
+.domain-band{margin-bottom:26px;background:linear-gradient(180deg,#fff9,transparent);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.domain-band > h3{font-family:var(--serif);font-size:18px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;}
+.domain-band > h3 .pip{width:11px;height:11px;border-radius:3px;}
+.domain-band > h3 .cnt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);font-weight:400;}
+.flow{display:flex;gap:0;overflow-x:auto;padding:4px;}
+.flow-col{flex:1;min-width:150px;padding:11px 12px;border-right:1px dashed var(--line);}
+.flow-col:last-child{border-right:0;}
+.flow-col h4{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;margin:0 0 9px;color:var(--ink-3);display:flex;align-items:center;gap:6px;}
+.flow-col h4 .sw{width:8px;height:8px;border-radius:2px;}
+.chiplist{display:flex;flex-direction:column;gap:4px;}
+.chip{font-family:var(--mono);font-size:11.5px;padding:5px 9px;border-radius:7px;background:#fff;border:1px solid var(--line);cursor:pointer;border-left:3px solid var(--lc,var(--line-2));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chip:hover{border-color:var(--accent);background:#fffdf6;}
+.chip.note::after{content:"●";color:var(--ochre);font-size:8px;margin-left:5px;vertical-align:middle;}
+.more{font-size:11px;color:var(--ink-3);padding:3px 4px;}
+
+/* ---------- tables ---------- */
+.tablter{display:flex;gap:10px;align-items:center;margin-bottom:14px;max-width:1100px;}
+.tablter input{max-width:320px;}
+.tabchips{display:flex;gap:6px;}
+.tabchips button{border:1px solid var(--line-2);background:var(--card);border-radius:8px;padding:7px 13px;font-family:var(--sans);font-weight:600;font-size:12.5px;color:var(--ink-2);cursor:pointer;}
+.tabchips button.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+table{width:100%;border-collapse:collapse;max-width:1180px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:top;}
+th{font-family:var(--serif);font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--ink-2);background:#fff8;cursor:pointer;user-select:none;position:sticky;top:0;}
+th:hover{color:var(--accent-ink);}
+tbody tr:hover{background:#fffdf6;}
+td.mono,.mono{font-family:var(--mono);font-size:11.5px;}
+.lk{color:var(--accent-ink);cursor:pointer;border-bottom:1px dotted var(--accent);}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:600;font-family:var(--sans);}
+.pill.singleton{background:#e3f0ea;color:#1d6b47;} .pill.transient{background:#f6ead9;color:#a5631e;} .pill.scoped{background:#eae4f4;color:#6b4ba0;}
+
+/* layer chip */
+.lchip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;color:#fff;}
+.lchip .d{width:7px;height:7px;border-radius:50%;background:#ffffffcc;}
+
+/* ---------- drawer ---------- */
+#scrim{position:fixed;inset:0;background:#2a221788;backdrop-filter:blur(1px);opacity:0;pointer-events:none;transition:opacity .2s;z-index:18;}
+#scrim.open{opacity:1;pointer-events:auto;}
+#drawer{position:fixed;top:0;right:0;height:100%;width:470px;max-width:92vw;background:var(--card);border-left:1px solid var(--line-2);transform:translateX(102%);transition:transform .26s cubic-bezier(.4,0,.2,1);z-index:19;display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(60,48,30,.18);}
+#drawer.open{transform:translateX(0);}
+.dh{padding:20px 24px 16px;border-bottom:1px solid var(--line);position:relative;}
+.dh .layerline{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+.dh h2{font-family:var(--mono);font-size:18px;font-weight:600;margin:0;word-break:break-word;line-height:1.25;}
+.dh .ns{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:4px;word-break:break-all;}
+.dh .x{position:absolute;top:16px;right:18px;border:0;background:#0000;font-size:22px;color:var(--ink-3);cursor:pointer;line-height:1;}
+.dh .x:hover{color:var(--ink);}
+.summary{font-family:var(--serif);font-size:16px;line-height:1.5;color:var(--ink);margin:14px 0 0;}
+.summary .src{display:block;font-family:var(--sans);font-size:10.5px;color:var(--ink-3);margin-top:6px;font-style:normal;letter-spacing:.3px;}
+.db{flex:1;overflow-y:auto;padding:18px 24px 60px;}
+.db::-webkit-scrollbar{width:9px;} .db::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:5px;}
+.kv{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 14px;}
+.tag{font-size:10.5px;padding:3px 9px;border-radius:7px;background:var(--paper-2);border:1px solid var(--line);color:var(--ink-2);}
+.tag.mono{font-family:var(--mono);}
+.dsec{font-family:var(--serif);font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink-3);margin:18px 0 8px;}
+.rels{display:flex;flex-wrap:wrap;gap:6px;}
+.relchip{font-family:var(--mono);font-size:11px;padding:4px 9px;border-radius:7px;background:#fff;border:1px solid var(--line);}
+.relchip.lk{border-color:var(--accent);color:var(--accent-ink);}
+details{margin:6px 0;border-top:1px dotted var(--line);}
+details summary{cursor:pointer;padding:8px 0;font-weight:600;color:var(--accent-ink);font-size:13px;}
+.mrow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dotted var(--line);font-size:12px;}
+.mrow .mono{color:var(--ink);} .mrow .rt{color:var(--ink-3);font-family:var(--mono);font-size:11px;}
+.md{line-height:1.62;font-size:13.5px;color:var(--ink);}
+.md h1,.md h2,.md h3{font-family:var(--serif);color:var(--accent-ink);}
+.md h2{font-size:16px;margin:16px 0 6px;} .md h3{font-size:14px;margin:13px 0 5px;}
+.md code{font-family:var(--mono);font-size:12px;background:var(--paper-2);padding:1px 5px;border-radius:4px;color:var(--accent-ink);}
+.md pre{background:#fff;border:1px solid var(--line);padding:11px;border-radius:9px;overflow:auto;}
+.md table{font-size:12px;} .md th{position:static;} .md a{color:var(--accent-ink);}
+.md ul{padding-left:20px;} .md li{margin:3px 0;}
+.notebox{background:linear-gradient(180deg,#fffdf6,#fff);border:1px solid var(--line);border-left:3px solid var(--ochre);border-radius:11px;padding:4px 16px 14px;margin-top:6px;}
+
+.empty{color:var(--ink-3);text-align:center;padding:60px 20px;font-family:var(--serif);font-size:16px;}
+@keyframes fadeup{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+.view.active .scroll > *{animation:fadeup .4s both;}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="rail">
+    <div class="brand">
+      <div class="logo"><div class="mark"></div><div><h1>Explore</h1><div class="tag">an atlas of your codebase</div></div></div>
+      <div class="repo" id="repo"></div>
+    </div>
+    <nav class="views">
+      <a data-view="map" class="active"><span class="ic">◴</span> Map</a>
+      <a data-view="tours"><span class="ic">➜</span> Guided tours</a>
+      <a data-view="domains"><span class="ic">▤</span> Domains &amp; flow</a>
+      <a data-view="tables"><span class="ic">≣</span> Reference</a>
+    </nav>
+    <div class="rail-body" id="rail-body"></div>
+  </aside>
+
+  <main id="main">
+    <div class="grid-bg"></div>
+
+    <section class="view active" data-view="map">
+      <div class="viewhead"><div><h2>Dependency map</h2><p>Modules as clusters, sized by how many types they hold. Click a cluster to open it; click a type to read what it does.</p></div></div>
+      <div class="crumb" id="crumb"></div>
+      <div id="cy"></div>
+      <div class="cyinfo" id="cyinfo"></div>
+    </section>
+
+    <section class="view" data-view="tours"><div class="scroll" id="tours-scroll"></div></section>
+    <section class="view" data-view="domains"><div class="scroll" id="domains-scroll"></div></section>
+    <section class="view" data-view="tables"><div class="scroll" id="tables-scroll"></div></section>
+  </main>
+</div>
+
+<div id="scrim"></div>
+<aside id="drawer">
+  <div class="dh"><button class="x" id="dx">×</button><div class="layerline" id="d-layer"></div><h2 id="d-title"></h2><div class="ns" id="d-ns"></div><p class="summary" id="d-sum"></p></div>
+  <div class="db" id="d-body"></div>
+</aside>
+
+<script>
+"use strict";
+const E = window.EXPLORE;
+if(!E){document.body.innerHTML='<p style="padding:50px;font-family:sans-serif">data.js not found — run <code>dotnet-graph explore</code>.</p>';throw new Error('no data');}
+if(window.cytoscapeFcose) cytoscape.use(window.cytoscapeFcose);
+
+/* ---------- indices ---------- */
+const NODES = E.nodes, byId = {};
+NODES.forEach(n=>byId[n.id]=n);
+const LAYERS = E.layers, LCOLOR={}, LLABEL={}, LDESC={};
+LAYERS.forEach(l=>{LCOLOR[l.id]=l.color;LLABEL[l.id]=l.label;LDESC[l.id]=l.desc;});
+LCOLOR.external="#b9b09c"; LLABEL.external="External"; LDESC.external="Framework / base types outside your solution.";
+const LAYER_ORDER = E.layerOrder;
+
+const DOMAIN_PALETTE=["#1f6f78","#bd6a2c","#5b7d3a","#8a5a9e","#b0473f","#3a6ea5","#9a7b1f","#557","#7a7"];
+const domains=[...new Set(NODES.map(n=>n.domain).filter(d=>d&&d!=="(external)"))].sort();
+const DCOLOR={}; domains.forEach((d,i)=>DCOLOR[d]=DOMAIN_PALETTE[i%DOMAIN_PALETTE.length]); DCOLOR["(external)"]="#b9b09c"; DCOLOR["(none)"]="#9a917f";
+
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const attr=s=>esc(s).replace(/'/g,"&#39;");
+const colorFor=(n,mode)=> mode==="domain" ? (DCOLOR[n.domain]||"#9a917f") : (LCOLOR[n.layer]||"#8a95a3");
+
+document.getElementById("repo").textContent = (E.meta.generatedFrom||"").replace(/^.*\/([^/]+\/[^/]+\/[^/]+)$/,"…/$1") || "knowledge.db";
+
+/* ---------- state ---------- */
+let colorMode="layer";
+let activeLayers=new Set(LAYER_ORDER);
+let showExternal=false, search="", cyBuilt=false;
+let mapMode="overview", groupBy="project", drillKey=null;
+
+/* =========================================================
+   CYTOSCAPE MAP
+========================================================= */
+const cy=cytoscape({container:document.getElementById("cy"),wheelSensitivity:.2,
+  style:[
+    {selector:"node",style:{"background-color":"data(c)","label":"data(label)","color":"#3c3528",
+      "font-family":"JetBrains Mono, monospace","font-size":9,"font-weight":500,"text-valign":"bottom","text-margin-y":4,
+      "width":"data(sz)","height":"data(sz)","border-width":"data(bw)","border-color":"#fff",
+      "text-opacity":.9,"min-zoomed-font-size":8,"overlay-opacity":0}},
+    {selector:'node[shape="diamond"]',style:{"shape":"diamond"}},
+    {selector:'node[ext=1]',style:{"background-opacity":.45,"shape":"round-rectangle","border-width":1,"border-color":"#cfc6b2"}},
+    {selector:'node[kind2="cluster"]',style:{"shape":"round-rectangle","label":"data(label)","color":"#fff",
+      "font-family":"Hanken Grotesk, sans-serif","font-size":11,"font-weight":700,"text-wrap":"wrap","text-max-width":108,
+      "text-valign":"center","text-halign":"center","text-margin-y":0,"text-opacity":1,"min-zoomed-font-size":0,
+      "text-outline-color":"data(c)","text-outline-width":2.5,"border-width":2.5,"border-color":"#fffefb",
+      "border-opacity":.85,"width":"data(sz)","height":"data(sz)"}},
+    {selector:'node[kind2="stub"]',style:{"background-opacity":.4,"border-width":1,"border-color":"#cfc6b2",
+      "text-opacity":.5,"font-size":8,"min-zoomed-font-size":10}},
+    {selector:"edge",style:{"width":1,"curve-style":"bezier","target-arrow-shape":"triangle","arrow-scale":.7,
+      "line-color":"#c9bfa9","target-arrow-color":"#c9bfa9","opacity":.5,
+      "line-style":ele=>ele.data("kind")==="implements"?"dashed":"solid"}},
+    {selector:"edge[w]",style:{"width":"data(width)","line-color":"#bcb195","target-arrow-color":"#bcb195",
+      "opacity":.5,"line-style":"solid","arrow-scale":.9,"curve-style":"bezier"}},
+    {selector:".faded",style:{"opacity":.07,"text-opacity":0}},
+    {selector:".hl",style:{"border-width":3,"border-color":"#1f6f78","z-index":99,"text-opacity":1,"font-size":12,"color":"#0f4248"}},
+    {selector:"edge.hl",style:{"line-color":"#1f6f78","target-arrow-color":"#1f6f78","opacity":1,"width":2}},
+    {selector:".tourpath",style:{"border-width":3,"border-color":"#bd6a2c","z-index":98}},
+  ]});
+
+/* group key + cluster helpers --------------------------------------------- */
+function groupKey(n){
+  if(groupBy==="domain") return n.domain||"(none)";
+  if(groupBy==="namespace") return n.namespace||"(none)";
+  return n.project||"(none)";
+}
+function clusterLabel(k){
+  if(groupBy==="domain") return k;
+  const p=k.split("."); return p.length>2?"…"+p.slice(-2).join("."):k;
+}
+function dominantLayer(layerDist){let best="other",bc=-1;for(const l in layerDist){if(layerDist[l]>bc){bc=layerDist[l];best=l;}}return best;}
+function clusterColor(c){ return colorMode==="domain" ? (DCOLOR[c.domain]||"#9a917f") : (LCOLOR[dominantLayer(c.layerDist)]||"#8a95a3"); }
+function computeClusters(){
+  const cl={};
+  NODES.forEach(n=>{ if(n.external) return; const k=groupKey(n);
+    const c=cl[k]||(cl[k]={key:k,domain:n.domain,nodes:[],layerDist:{}});
+    c.nodes.push(n); c.layerDist[n.layer]=(c.layerDist[n.layer]||0)+1; });
+  return cl;
+}
+const keyOfNode={}; // memoized per groupBy build
+function rebuildKeyMap(){ for(const k in keyOfNode)delete keyOfNode[k]; NODES.forEach(n=>{if(!n.external)keyOfNode[n.id]=groupKey(n);}); }
+
+/* flat: every type as its own node — used when the graph is small enough to
+   read directly (clustering only helps when there are many nodes). */
+const SMALL_GRAPH=60;
+function buildFlat(internal){
+  mapMode="flat"; drillKey=null;
+  const vis=internal.filter(n=>activeLayers.has(n.layer)&&(!search||n.id.toLowerCase().includes(search)));
+  const ids=new Set(vis.map(n=>n.id));
+  const els=[];
+  vis.forEach(n=>els.push({data:{id:n.id,label:n.name,c:colorFor(n,colorMode),
+    sz:Math.min(52,17+(n.injectors||0)*2.6+(n.deg||0)*.6),bw:n.note?2.5:0,
+    shape:n.kind==="interface"?"diamond":"ellipse"}}));
+  E.edges.forEach((e,i)=>{if(ids.has(e.from)&&ids.has(e.to))els.push({data:{id:"e"+i,source:e.from,target:e.to,kind:e.kind}});});
+  cy.elements().remove(); cy.add(els);
+  runLayout("drill"); setBreadcrumb(); cyBuilt=true;
+  info(`${vis.length} types · coloured by ${colorMode}`);
+}
+
+/* overview: one node per cluster, edges aggregated -------------------------- */
+function buildOverview(){
+  mapMode="overview"; drillKey=null; rebuildKeyMap();
+  const internal=NODES.filter(n=>!n.external);
+  if(internal.length<=SMALL_GRAPH){ buildFlat(internal); return; }
+  const cl=computeClusters();
+  const ew={};
+  E.edges.forEach(e=>{const a=keyOfNode[e.from],b=keyOfNode[e.to]; if(!a||!b||a===b)return; const k=a+""+b; ew[k]=(ew[k]||0)+1;});
+  const els=[];
+  Object.values(cl).forEach(c=>els.push({data:{id:"cl::"+c.key,label:clusterLabel(c.key)+"  ·  "+c.nodes.length,
+    c:clusterColor(c), kind2:"cluster", sz:Math.max(30,Math.min(96,20+c.nodes.length*1.5))}}));
+  Object.entries(ew).forEach(([k,w],i)=>{const[a,b]=k.split("");
+    els.push({data:{id:"ce"+i,source:"cl::"+a,target:"cl::"+b,w,width:Math.max(1,Math.min(8,Math.log2(w+1)*1.6))}});});
+  cy.elements().remove(); cy.add(els);
+  const n=Object.keys(cl).length;
+  runLayout("overview");
+  setBreadcrumb(); cyBuilt=true;
+  info(`${n} clusters · grouped by ${groupBy} · click one to open it`);
+}
+
+/* drill: the types inside one cluster + their cross-cluster neighbours ------- */
+function buildDrill(key){
+  mapMode="drill"; drillKey=key; rebuildKeyMap();
+  const own=NODES.filter(n=>!n.external && keyOfNode[n.id]===key && activeLayers.has(n.layer) && (!search||n.id.toLowerCase().includes(search)));
+  const ownIds=new Set(own.map(n=>n.id));
+  const stub=new Set();
+  E.edges.forEach(e=>{
+    if(ownIds.has(e.from)&&!ownIds.has(e.to)&&byId[e.to]&&!byId[e.to].external) stub.add(e.to);
+    if(ownIds.has(e.to)&&!ownIds.has(e.from)&&byId[e.from]&&!byId[e.from].external) stub.add(e.from);});
+  const els=[];
+  own.forEach(n=>els.push({data:{id:n.id,label:n.name,c:colorFor(n,colorMode),
+    sz:Math.min(50,16+(n.injectors||0)*2.4),bw:n.note?2.5:0,shape:n.kind==="interface"?"diamond":"ellipse"}}));
+  stub.forEach(id=>{const n=byId[id];els.push({data:{id,label:n.name,c:colorFor(n,colorMode),sz:12,kind2:"stub",shape:n.kind==="interface"?"diamond":"ellipse"}});});
+  const all=new Set([...ownIds,...stub]);
+  E.edges.forEach((e,i)=>{if(all.has(e.from)&&all.has(e.to))els.push({data:{id:"e"+i,source:e.from,target:e.to,kind:e.kind}});});
+  cy.elements().remove(); cy.add(els);
+  runLayout("drill");
+  setBreadcrumb(key);
+  info(`${own.length} types in ${clusterLabel(key)} · ${stub.size} linked from elsewhere`);
+}
+
+/* overlap-free layout. nodeDimensionsIncludeLabels makes fcose/cose measure the
+   label box (labels sit below type nodes) so they're spaced apart, not just the
+   shapes. quality:"proof" + generous separation finishes the job. */
+function runLayout(kind){
+  const tuned = kind==="overview"
+    ? {nodeRepulsion:24000,idealEdgeLength:170,nodeSeparation:220,gravity:.15}
+    : {nodeRepulsion:15000,idealEdgeLength:100,nodeSeparation:130,gravity:.25};
+  const opts = window.cytoscapeFcose
+    ? {name:"fcose",animate:false,quality:"proof",nodeDimensionsIncludeLabels:true,
+       packComponents:true,randomize:true,gravityRange:3.8,...tuned}
+    : {name:"cose",animate:false,nodeDimensionsIncludeLabels:true,nodeOverlap:28,
+       componentSpacing:120,nodeRepulsion:()=>tuned.nodeRepulsion,idealEdgeLength:()=>tuned.idealEdgeLength};
+  cy.layout(opts).run();
+  cy.fit(undefined, kind==="overview"?55:45);
+}
+function renderMap(){ (mapMode==="drill"&&drillKey)?buildDrill(drillKey):buildOverview(); }
+function onSearch(){
+  if(mapMode==="drill"&&drillKey){buildDrill(drillKey);return;}
+  if(NODES.filter(n=>!n.external).length<=SMALL_GRAPH){buildOverview();return;} // flat: just filter
+  if(search){ rebuildKeyMap();
+    const hit=NODES.find(n=>!n.external&&n.id.toLowerCase().includes(search));
+    if(hit){buildDrill(keyOfNode[hit.id]);renderRail("map");return;} }
+  buildOverview();
+}
+function info(t){document.getElementById("cyinfo").textContent=t;}
+function setBreadcrumb(key){
+  const bc=document.getElementById("crumb");
+  if(!key){bc.innerHTML=`<span class="now">${mapMode==="flat"?"All types":"All clusters"}</span>`;}
+  else{bc.innerHTML=`<span class="lk" id="crumb-home">← All clusters</span><span class="sep">/</span><span class="now">${esc(clusterLabel(key))}</span>`;
+    document.getElementById("crumb-home").onclick=()=>buildOverview();}
+}
+function recolor(){
+  if(mapMode==="overview"){const cl=computeClusters();cy.nodes().forEach(nd=>{const k=nd.id().slice(4);if(cl[k])nd.data("c",clusterColor(cl[k]));});}
+  else cy.nodes().forEach(nd=>{const n=byId[nd.id()];if(n)nd.data("c",colorFor(n,colorMode));});
+}
+cy.on("tap","node",e=>{const id=e.target.id();
+  if(id.indexOf("cl::")===0){buildDrill(id.slice(4));return;}
+  focusNode(id);openDrawer(id);});
+cy.on("tap",e=>{if(e.target===cy)clearFocus();});
+function focusNode(id){const el=cy.getElementById(id);if(!el.length)return;cy.elements().addClass("faded").removeClass("hl");el.closedNeighborhood().removeClass("faded").addClass("hl");}
+function clearFocus(){cy.elements().removeClass("faded hl tourpath");}
+
+/* =========================================================
+   DRAWER
+========================================================= */
+const drawer=document.getElementById("drawer"), scrim=document.getElementById("scrim");
+function layerChip(layer){const c=LCOLOR[layer]||"#8a95a3";return `<span class="lchip" style="background:${c}"><span class="d"></span>${esc(LLABEL[layer]||layer)}</span>`;}
+function openDrawer(id){
+  const n=byId[id]; if(!n)return;
+  document.getElementById("d-layer").innerHTML = layerChip(n.layer) + (n.domain&&n.domain!=="(external)"?`<span class="tag" style="border-color:${DCOLOR[n.domain]||'#ccc'}">${esc(n.domain)}</span>`:"");
+  document.getElementById("d-title").textContent=n.name+(n.abstract?"  ·  abstract":"");
+  document.getElementById("d-ns").textContent=n.id;
+  document.getElementById("d-sum").innerHTML=esc(n.summary||"")+(n.summary?`<span class="src">${n.fromNote?"✦ from knowledge note":"derived summary"}</span>`:"");
+  let h="";
+  h+=`<div class="kv">`;
+  if(n.kind)h+=`<span class="tag">${esc(n.kind)}</span>`;
+  if(n.project)h+=`<span class="tag">${esc(n.project)}</span>`;
+  if(n.platform)h+=`<span class="tag">${esc(n.platform)}</span>`;
+  if(n.injectors)h+=`<span class="tag">injected by ${n.injectors}</span>`;
+  if(n.impls)h+=`<span class="tag">${n.impls} implementor${n.impls>1?"s":""}</span>`;
+  h+=`</div>`;
+  if(n.file)h+=`<div class="mono" style="font-size:11px;color:var(--ink-3);margin-bottom:6px">${esc(n.file)}${n.line?":"+n.line:""}</div>`;
+  const out=E.edges.filter(e=>e.from===id), inc=E.edges.filter(e=>e.to===id);
+  if(out.length)h+=relSec("Inherits / implements",out.map(e=>e.to));
+  if(inc.length)h+=relSec("Extended / implemented by",inc.map(e=>e.from));
+  const m=E.members[id];
+  if(m){
+    h+=memSec("Constructor injections",m.injections,x=>`<span class="mono">${esc(x.param_name)}</span>`,x=>esc(x.param_type));
+    h+=memSec("Methods",m.methods,x=>`<span class="mono">${x.is_async?"async ":""}${esc(x.name)}()</span>`,x=>esc(x.return_type||""));
+    h+=memSec("Properties",m.properties,x=>`<span class="mono">${esc(x.name)}</span>`,x=>esc(x.type_name||""));
+    h+=memSec("Fields",m.fields,x=>`<span class="mono">${esc(x.name)}</span>`,x=>esc(x.type_name||""));
+  }
+  const note=E.notes[id];
+  if(note)h+=`<div class="dsec">Knowledge note</div><div class="notebox"><div class="md">${marked.parse(note)}</div></div>`;
+  document.getElementById("d-body").innerHTML=h;
+  drawer.classList.add("open");scrim.classList.add("open");
+  if(location.hash!=="#type="+id) history.replaceState(null,"","#type="+encodeURIComponent(id));
+}
+function relSec(title,ids){
+  const chips=ids.map(t=>{const known=byId[t]&&!byId[t].external;return `<span class="relchip ${known?"lk":""}" ${known?`data-go="${attr(t)}"`:""}>${esc(byId[t]?byId[t].name:t.split(".").pop())}</span>`;}).join("");
+  return `<div class="dsec">${title}</div><div class="rels">${chips}</div>`;
+}
+function memSec(title,arr,left,right){
+  if(!arr||!arr.length)return"";
+  const rows=arr.map(x=>`<div class="mrow">${left(x)}<span class="rt">${right(x)}</span></div>`).join("");
+  return `<details><summary>${title} · ${arr.length}</summary>${rows}</details>`;
+}
+function closeDrawer(){drawer.classList.remove("open");scrim.classList.remove("open");if(location.hash.startsWith("#type="))history.replaceState(null,"","#"+currentView);}
+document.getElementById("dx").onclick=closeDrawer; scrim.onclick=closeDrawer;
+document.getElementById("d-body").addEventListener("click",e=>{const t=e.target.closest("[data-go]");if(t){const id=t.getAttribute("data-go");if(currentView==="map"){const el=cy.getElementById(id);if(el.length){focusNode(id);cy.animate({center:{eles:el},zoom:1.3},{duration:300});}}openDrawer(id);}});
+
+/* =========================================================
+   RAIL (per-view controls)
+========================================================= */
+function renderRail(view){
+  const r=document.getElementById("rail-body");
+  if(view==="map"){
+    const inDrill=mapMode==="drill"&&drillKey;
+    r.innerHTML=`
+      <div class="sec">Group into clusters</div>
+      <div class="toggle"><button id="g-project" class="${groupBy==="project"?"on":""}">Project</button><button id="g-namespace" class="${groupBy==="namespace"?"on":""}">Namespace</button><button id="g-domain" class="${groupBy==="domain"?"on":""}">Domain</button></div>
+      ${inDrill?`<button class="minibtn" id="back" style="margin-top:8px;border-color:var(--accent);color:var(--accent-ink)">← back to all clusters</button>`:`<p style="font-size:11.5px;color:var(--ink-3);margin:8px 2px 0;line-height:1.5">Click a cluster in the map to open it and see its types.</p>`}
+      <div class="sec">Search</div><input type="search" id="q" placeholder="${inDrill?"filter types in cluster…":"find a type → opens its cluster"}" value="${attr(search)}">
+      <div class="sec">Colour by</div>
+      <div class="toggle"><button id="t-layer" class="${colorMode==="layer"?"on":""}">Layer</button><button id="t-domain" class="${colorMode==="domain"?"on":""}">Domain</button></div>
+      <div class="sec">Layers ${inDrill?"":'<span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-3)">· filters inside a cluster</span>'}</div><div class="legend" id="legend"></div>
+      <button class="minibtn" id="relayout">↻ re-run layout</button>
+      <button class="minibtn" id="fit">⤢ fit to screen</button>
+      <div class="sec">This codebase</div>
+      <div class="stats">
+        ${stat(E.stats.types,"types")}${stat(E.stats.edges,"links")}
+        ${stat(E.stats.tours,"tours")}${stat(E.stats.notes,"notes")}</div>`;
+    const lg=document.getElementById("legend");
+    lg.innerHTML=LAYER_ORDER.map(id=>`<div class="row ${activeLayers.has(id)?"":"off"}" data-l="${id}">
+        <span class="sw" style="background:${LCOLOR[id]}"></span><span class="lb">${esc(LLABEL[id])}</span>
+        <span class="ct">${E.stats.layerDist[id]||0}</span></div><div class="desc">${esc(LDESC[id])}</div>`).join("");
+    lg.querySelectorAll(".row").forEach(row=>{
+      row.onclick=ev=>{const id=row.dataset.l;
+        if(ev.detail===2){activeLayers=new Set([id]);} // dbl-click = solo
+        else{activeLayers.has(id)?activeLayers.delete(id):activeLayers.add(id);}
+        renderRail("map");renderMap();};
+      row.onmouseenter=()=>row.classList.add("show"); row.onmouseleave=()=>row.classList.remove("show");
+    });
+    const setGroup=g=>{groupBy=g;drillKey=null;mapMode="overview";renderRail("map");buildOverview();};
+    document.getElementById("g-project").onclick=()=>setGroup("project");
+    document.getElementById("g-namespace").onclick=()=>setGroup("namespace");
+    document.getElementById("g-domain").onclick=()=>setGroup("domain");
+    if(inDrill)document.getElementById("back").onclick=()=>{buildOverview();renderRail("map");};
+    let deb; document.getElementById("q").oninput=e=>{clearTimeout(deb);deb=setTimeout(()=>{search=e.target.value.trim().toLowerCase();onSearch();},240);};
+    document.getElementById("t-layer").onclick=()=>{colorMode="layer";renderRail("map");recolor();};
+    document.getElementById("t-domain").onclick=()=>{colorMode="domain";renderRail("map");recolor();};
+    document.getElementById("relayout").onclick=()=>renderMap();
+    document.getElementById("fit").onclick=()=>cy.fit(undefined,55);
+  } else if(view==="tours"){
+    r.innerHTML=`<div class="sec">About tours</div><p style="font-size:12.5px;color:var(--ink-2);line-height:1.55">Each tour starts at an entry point and walks its dependencies in order — so every step builds on the last. Pick one to read the path.</p>
+      <div class="sec">Filter</div><input class="f" id="tf" placeholder="filter tours…">
+      <div class="sec">Count</div><div class="stats">${stat(E.tours.length,"tours")}${stat(E.tours.filter(t=>t.kind==="feature").length,"features")}</div>`;
+    document.getElementById("tf").oninput=e=>renderTourList(e.target.value.toLowerCase());
+  } else if(view==="domains"){
+    r.innerHTML=`<div class="sec">Domains &amp; flow</div><p style="font-size:12.5px;color:var(--ink-2);line-height:1.55">Each business domain laid out left→right by architectural layer — UI through to infrastructure. The shape of a feature, at a glance.</p>
+      <div class="sec">Domains</div>${domains.map(d=>`<div class="chk"><span class="sw" style="width:11px;height:11px;border-radius:3px;background:${DCOLOR[d]};display:inline-block"></span> ${esc(d)}</div>`).join("")}`;
+  } else {
+    r.innerHTML=`<div class="sec">Reference tables</div><p style="font-size:12.5px;color:var(--ink-2);line-height:1.55">The raw wiring — dependency-injection registrations, ViewModel features, and HTTP endpoints. Click any type to open it.</p>`;
+  }
+}
+const stat=(v,l)=>`<div class="statc"><b>${v}</b><span>${l}</span></div>`;
+
+/* =========================================================
+   TOURS VIEW
+========================================================= */
+let currentTour=null;
+function renderTours(){
+  const s=document.getElementById("tours-scroll");
+  s.innerHTML=`<div class="viewhead" style="position:static;padding:0 0 18px"><div><h2>Guided tours</h2><p>Follow a dependency-ordered path through one slice of the system.</p></div></div>
+    <div class="tours-wrap"><div class="tour-list" id="tour-list"></div><div class="tour-stage" id="tour-stage"><div class="empty">Select a tour to begin.</div></div></div>`;
+  renderTourList("");
+  if(E.tours.length) selectTour(currentTour||E.tours[0].id);
+}
+function renderTourList(filter){
+  const el=document.getElementById("tour-list"); if(!el)return;
+  const list=E.tours.filter(t=>!filter||t.title.toLowerCase().includes(filter)||(t.domain||"").toLowerCase().includes(filter));
+  el.innerHTML=list.map(t=>`<button class="tour-item ${t.id===currentTour?"on":""}" data-t="${attr(t.id)}">
+      <div class="tt">${esc(t.title)}</div>
+      <div class="tm">${t.kind==="startup"?'<span class="badge-startup">★ entry point</span>':esc(t.domain||"feature")} · ${t.steps.length} steps</div></button>`).join("")||`<div class="more">No tours match.</div>`;
+  el.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>selectTour(b.dataset.t));
+}
+function selectTour(id){
+  currentTour=id;
+  const t=E.tours.find(x=>x.id===id); if(!t)return;
+  document.querySelectorAll(".tour-item").forEach(b=>b.classList.toggle("on",b.dataset.t===id));
+  const stage=document.getElementById("tour-stage");
+  stage.innerHTML=`<div class="stepper">${t.steps.map((fn,i)=>{const n=byId[fn]||{name:fn.split(".").pop(),summary:""};
+    return `<div class="step" data-go="${attr(fn)}"><div class="num">${i+1}</div>
+      <div class="card"><div class="name">${esc(n.name)}</div><div class="sum">${esc(n.summary||"")}</div>
+      <div class="meta">${layerChip(n.layer||"other")}${n.note?'<span class="tag" style="color:var(--ochre)">✦ note</span>':""}</div></div></div>`;}).join("")}</div>`;
+  stage.querySelectorAll("[data-go]").forEach(s=>s.onclick=()=>openDrawer(s.dataset.go));
+}
+
+/* =========================================================
+   DOMAINS / FLOW VIEW
+========================================================= */
+function renderDomains(){
+  const s=document.getElementById("domains-scroll");
+  const flowLayers=LAYER_ORDER.filter(l=>l!=="other");
+  const byDom={};
+  NODES.forEach(n=>{if(n.external||!n.domain||n.domain==="(external)")return;(byDom[n.domain]||(byDom[n.domain]={}))[n.layer]||(byDom[n.domain][n.layer]=[]);byDom[n.domain][n.layer].push(n);});
+  let h=`<div class="viewhead" style="position:static;padding:0 0 18px"><div><h2>Domains &amp; flow</h2><p>Each domain’s types arranged by layer — read left to right to see how a request flows from screen to storage.</p></div></div>`;
+  domains.forEach(d=>{
+    const cols=byDom[d]||{}; const total=Object.values(cols).reduce((a,b)=>a+b.length,0);
+    if(!total)return;
+    h+=`<div class="domain-band"><h3><span class="pip" style="background:${DCOLOR[d]}"></span>${esc(d)}<span class="cnt">${total} types</span></h3><div class="flow">`;
+    flowLayers.forEach(l=>{
+      const items=(cols[l]||[]).sort((a,b)=>(b.injectors+b.deg)-(a.injectors+a.deg));
+      if(!items.length){h+=`<div class="flow-col"><h4><span class="sw" style="background:${LCOLOR[l]}"></span>${esc(LLABEL[l])}</h4><div class="more">—</div></div>`;return;}
+      const shown=items.slice(0,9);
+      h+=`<div class="flow-col"><h4><span class="sw" style="background:${LCOLOR[l]}"></span>${esc(LLABEL[l])} <span style="color:var(--ink-3);font-weight:400">${items.length}</span></h4><div class="chiplist">`;
+      shown.forEach(n=>h+=`<div class="chip ${n.note?"note":""}" style="--lc:${LCOLOR[l]}" data-go="${attr(n.id)}" title="${attr(n.summary||"")}">${esc(n.name)}</div>`);
+      if(items.length>shown.length)h+=`<div class="more">+${items.length-shown.length} more</div>`;
+      h+=`</div></div>`;
+    });
+    h+=`</div></div>`;
+  });
+  s.innerHTML=h;
+  s.querySelectorAll("[data-go]").forEach(c=>c.onclick=()=>openDrawer(c.dataset.go));
+}
+
+/* =========================================================
+   TABLES VIEW
+========================================================= */
+let tableTab="di", tableSort={};
+function renderTables(){
+  const s=document.getElementById("tables-scroll");
+  s.innerHTML=`<div class="viewhead" style="position:static;padding:0 0 18px"><div><h2>Reference</h2><p>The wiring underneath — registrations, features, and endpoints.</p></div></div>
+    <div class="tablter"><div class="tabchips">
+      <button data-tab="di" class="${tableTab==="di"?"on":""}">DI · ${E.registrations.length}</button>
+      <button data-tab="features" class="${tableTab==="features"?"on":""}">Features · ${E.features.length}</button>
+      <button data-tab="endpoints" class="${tableTab==="endpoints"?"on":""}">Endpoints · ${E.endpoints.length}</button>
+    </div><input class="f" id="tbf" placeholder="filter rows…"></div><div id="tbl"></div>`;
+  s.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{tableTab=b.dataset.tab;renderTables();});
+  document.getElementById("tbf").oninput=e=>drawTable(e.target.value.toLowerCase());
+  drawTable("");
+  s.querySelector("#tbl").addEventListener("click",e=>{const t=e.target.closest("[data-go]");if(t)openDrawer(t.getAttribute("data-go"));});
+}
+const lk=t=>byId[t]&&!byId[t].external?`<span class="lk mono" data-go="${attr(t)}">${esc(t.split(".").pop())}</span>`:`<span class="mono">${esc(t?t.split(".").pop():"")}</span>`;
+const pill=l=>`<span class="pill ${esc((l||"").toLowerCase())}">${esc(l||"?")}</span>`;
+function tableDef(){
+  if(tableTab==="di")return{cols:["Interface","Implementation","Lifetime","Project"],keys:["interface","impl","lifetime","project"],rows:E.registrations,
+    cell:r=>[lk(r.interface),lk(r.impl),pill(r.lifetime),esc(r.project||"")]};
+  if(tableTab==="features")return{cols:["Feature","Domain","ViewModel","Project"],keys:["name","domain","viewmodel","project"],rows:E.features,
+    cell:r=>[`<b>${esc(r.name)}</b>`,esc(r.domain||""),lk(r.viewmodel),esc(r.project||"")]};
+  return{cols:["Method","URL / key","Type","Project"],keys:["method","url","type","project"],rows:E.endpoints,
+    cell:r=>[`<span class="mono">${esc(r.method||"")}</span>`,`<span class="mono">${esc(r.url||"")}</span>`,lk(r.type),esc(r.project||"")]};
+}
+function drawTable(filter){
+  const d=tableDef(); const tbl=document.getElementById("tbl"); if(!tbl)return;
+  let rows=d.rows.filter(r=>!filter||JSON.stringify(r).toLowerCase().includes(filter));
+  const sk=tableSort[tableTab];
+  if(sk){const[ci,dir]=sk;rows=[...rows].sort((a,b)=>String(a[d.keys[ci]]||"").localeCompare(String(b[d.keys[ci]]||""))*dir);}
+  tbl.innerHTML=`<table><thead><tr>${d.cols.map((c,i)=>`<th data-c="${i}">${esc(c)}${sk&&sk[0]===i?(sk[1]>0?" ▲":" ▼"):""}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${d.cell(r).map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  tbl.querySelectorAll("th").forEach(th=>th.onclick=()=>{const i=+th.dataset.c;const cur=tableSort[tableTab];tableSort[tableTab]=cur&&cur[0]===i?[i,-cur[1]]:[i,1];drawTable(filter);});
+}
+
+/* =========================================================
+   VIEW ROUTING
+========================================================= */
+let currentView="map";
+function switchView(v){
+  currentView=v;
+  document.querySelectorAll("nav.views a").forEach(a=>a.classList.toggle("active",a.dataset.view===v));
+  document.querySelectorAll(".view").forEach(s=>s.classList.toggle("active",s.dataset.view===v));
+  document.querySelector(".grid-bg").style.display=(v==="map")?"block":"none";
+  renderRail(v);
+  if(v==="map"){if(!cyBuilt)renderMap();}
+  else if(v==="tours")renderTours();
+  else if(v==="domains")renderDomains();
+  else if(v==="tables")renderTables();
+  if(!location.hash.startsWith("#type=")) history.replaceState(null,"","#"+v);
+}
+document.querySelectorAll("nav.views a").forEach(a=>a.onclick=()=>switchView(a.dataset.view));
+function drillFromHash(key){switchView("map");buildDrill(key);renderRail("map");}
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);
+  if(["map","tours","domains","tables"].includes(h))switchView(h);
+  else if(h.startsWith("type="))openDrawer(decodeURIComponent(h.slice(5)));
+  else if(h.startsWith("cluster="))drillFromHash(decodeURIComponent(h.slice(8)));});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer();});
+
+/* ---------- boot ---------- */
+const h0=location.hash.slice(1);
+const startV=["map","tours","domains","tables"].includes(h0)?h0:"map";
+switchView(startV);
+if(h0.startsWith("type="))openDrawer(decodeURIComponent(h0.slice(5)));
+else if(h0.startsWith("cluster="))drillFromHash(decodeURIComponent(h0.slice(8)));
+</script>
+</body>
+</html>
