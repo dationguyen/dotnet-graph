@@ -317,6 +317,48 @@ def test_fix_relationship_kinds_uses_real_kind():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# ── 10c. Search (FTS5 trigram over the built fixture) ───────────────────────────
+
+def test_search_index_built(graph_db):
+    conn, _ = graph_db
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_fts'"
+    ).fetchone()
+    assert row, "search_fts index not built"
+    n = conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0]
+    assert n > 0
+
+
+def test_search_substring_matches_type(graph_db):
+    """Trigram search finds a type by an interior substring of its name."""
+    from dotnet_graph.search import search_graph
+    conn, _ = graph_db
+    names = {t["name"] for t in search_graph(conn, "Serv")["types"]}
+    assert "UserService" in names, f"'Serv' should match UserService; got {names}"
+
+
+def test_search_finds_methods(graph_db):
+    from dotnet_graph.search import search_graph
+    conn, _ = graph_db
+    methods = {m["name"] for m in search_graph(conn, "GetUser")["methods"]}
+    assert "GetUserAsync" in methods, f"got {methods}"
+
+
+def test_search_short_query_falls_back_to_like(graph_db):
+    """A 2-char query is below the trigram floor but still works via LIKE."""
+    from dotnet_graph.search import search_graph
+    conn, _ = graph_db
+    names = {t["name"] for t in search_graph(conn, "Us")["types"]}
+    assert any("User" in n for n in names), f"2-char query found nothing: {names}"
+
+
+def test_api_search_substring(api_client):
+    resp = api_client.get("/query/search?q=Serv")
+    assert resp.status_code == 200
+    names = [t["name"] for t in resp.json()["types"]]
+    assert "UserService" in names
+
+
 # ── 11. REST API ───────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")

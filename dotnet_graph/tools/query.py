@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..db import count as _count
+from ..search import search_graph
 
 
 def register_query_tools(mcp, get_db: Callable[[], sqlite3.Connection]) -> None:
@@ -282,30 +283,15 @@ def register_query_tools(mcp, get_db: Callable[[], sqlite3.Connection]) -> None:
 
     @mcp.tool()
     def search(query: str) -> str:
-        """Search types, methods, properties, and fields by keyword."""
+        """Search types, methods, properties, and fields by keyword.
+
+        Substring match (e.g. `Serv` matches `UserService`), case-insensitive.
+        """
         conn = get_db()
-        pat = f"%{query}%"
-
-        types = conn.execute("""
-            SELECT t.name, t.kind, t.full_name, f.path, t.line
-            FROM types t JOIN files f ON t.file_id = f.id
-            WHERE t.name LIKE ? OR t.full_name LIKE ?
-            LIMIT 10
-        """, (pat, pat)).fetchall()
-
-        methods = conn.execute("""
-            SELECT m.name, t.name AS type_name, f.path, m.line, m.return_type
-            FROM methods m JOIN types t ON m.type_id = t.id JOIN files f ON m.file_id = f.id
-            WHERE m.name LIKE ?
-            LIMIT 10
-        """, (pat,)).fetchall()
-
-        props = conn.execute("""
-            SELECT p.name, t.name AS type_name, f.path, p.line, p.type_name AS prop_type
-            FROM properties p JOIN types t ON p.type_id = t.id JOIN files f ON p.file_id = f.id
-            WHERE p.name LIKE ?
-            LIMIT 10
-        """, (pat,)).fetchall()
+        results = search_graph(conn, query)
+        types = results["types"]
+        methods = results["methods"]
+        props = results["properties"]
 
         out = [f"Search results for `{query}`:\n"]
 

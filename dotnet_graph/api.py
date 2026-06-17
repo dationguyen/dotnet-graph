@@ -14,6 +14,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from .search import search_graph
+
 _db_path: Path | None = None
 _conn: sqlite3.Connection | None = None
 _conn_mtime: float = 0.0
@@ -221,32 +223,8 @@ def get_features():
 
 @router.get("/search", summary="Keyword search across the graph")
 def search(q: str = Query(..., description="Keyword to search for")):
-    """Search types, methods, and properties by keyword."""
-    conn = _get_db()
-    pat = f"%{q}%"
-    types = conn.execute("""
-        SELECT t.name, t.kind, t.full_name, f.path, t.line
-        FROM types t JOIN files f ON t.file_id = f.id
-        WHERE t.name LIKE ? OR t.full_name LIKE ?
-        LIMIT 10
-    """, (pat, pat)).fetchall()
-    methods = conn.execute("""
-        SELECT m.name, t.name AS type_name, f.path, m.line, m.return_type
-        FROM methods m JOIN types t ON m.type_id = t.id JOIN files f ON m.file_id = f.id
-        WHERE m.name LIKE ?
-        LIMIT 10
-    """, (pat,)).fetchall()
-    props = conn.execute("""
-        SELECT p.name, t.name AS type_name, f.path, p.line, p.type_name AS prop_type
-        FROM properties p JOIN types t ON p.type_id = t.id JOIN files f ON p.file_id = f.id
-        WHERE p.name LIKE ?
-        LIMIT 10
-    """, (pat,)).fetchall()
-    return {
-        "types": [dict(r) for r in types],
-        "methods": [dict(r) for r in methods],
-        "properties": [dict(r) for r in props],
-    }
+    """Search types, methods, and properties by keyword (substring, case-insensitive)."""
+    return search_graph(_get_db(), q)
 
 
 @router.get("/stats", summary="Graph statistics and build info")

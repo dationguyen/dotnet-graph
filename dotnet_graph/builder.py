@@ -403,6 +403,49 @@ def _resolve_relationships(conn: sqlite3.Connection, verbose: bool = False) -> N
         print(f"  Resolved {len(updates)} relationships.")
 
 
+def _build_search_index(conn: sqlite3.Connection, verbose: bool = False) -> None:
+    """(Re)build the FTS5 trigram search index over type/method/property names.
+
+    Trigram tokenization gives substring matching (so `search("Serv")` finds
+    `UserService`), making it a strict superset of the old LIKE search but
+    index-accelerated. Rebuilt wholesale each build — cheap at this row count and
+    far simpler than trigger-based incremental sync. If the SQLite build lacks the
+    trigram tokenizer, the table is skipped and search falls back to LIKE.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5("
+            "  entity UNINDEXED, name, full_name,"
+            "  kind UNINDEXED, container UNINDEXED, path UNINDEXED, line UNINDEXED,"
+            "  tokenize='trigram')"
+        )
+    except sqlite3.OperationalError as exc:
+        if verbose:
+            print(f"  FTS5 trigram unavailable ({exc}) — search will use LIKE.")
+        return
+
+    cur.execute("DELETE FROM search_fts")
+    cur.execute(
+        "INSERT INTO search_fts (entity, name, full_name, kind, container, path, line) "
+        "SELECT 'type', t.name, t.full_name, t.kind, NULL, f.path, t.line "
+        "FROM types t LEFT JOIN files f ON t.file_id = f.id"
+    )
+    cur.execute(
+        "INSERT INTO search_fts (entity, name, full_name, kind, container, path, line) "
+        "SELECT 'method', m.name, '', m.return_type, t.name, f.path, m.line "
+        "FROM methods m JOIN types t ON m.type_id = t.id LEFT JOIN files f ON m.file_id = f.id"
+    )
+    cur.execute(
+        "INSERT INTO search_fts (entity, name, full_name, kind, container, path, line) "
+        "SELECT 'property', p.name, '', p.type_name, t.name, f.path, p.line "
+        "FROM properties p JOIN types t ON p.type_id = t.id LEFT JOIN files f ON p.file_id = f.id"
+    )
+    if verbose:
+        n = cur.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0]
+        print(f"  Search index: {n:,} entries.")
+
+
 def _fix_relationship_kinds(conn: sqlite3.Connection, verbose: bool = False) -> None:
     """Correct the implements/inherits tag using the target's *actual* kind.
 
@@ -667,6 +710,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             _resolve_relationships(conn, verbose=verbose)
             _fix_relationship_kinds(conn, verbose=verbose)
             _build_features(conn, verbose=verbose)
+            _build_search_index(conn, verbose=verbose)
             conn.commit()
 
             _store_hashes(conn, all_hashes)
@@ -719,6 +763,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             if verbose:
                 print("Building features index...")
             _build_features(conn, verbose=verbose)
+            _build_search_index(conn, verbose=verbose)
             conn.commit()
 
             _store_hashes(conn, all_hashes)
