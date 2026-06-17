@@ -266,6 +266,57 @@ public class TempService { public void DoNothing() {} }
             extra.unlink()
 
 
+# ── 10b. Relationship kind correction (pure SQLite, no .NET needed) ─────────────
+
+def test_fix_relationship_kinds_uses_real_kind():
+    """implements/inherits is set from the target's actual kind, not its spelling."""
+    from dotnet_graph.builder import _fix_relationship_kinds
+    from dotnet_graph.db import init_db
+
+    tmp_dir = tempfile.mkdtemp(prefix="dotnet-graph-relkind-")
+    try:
+        conn = init_db(Path(tmp_dir) / "k.db")
+        types = [
+            ("App.IdentityBase", "IdentityBase", "class"),      # I-prefixed CLASS
+            ("App.Account", "Account", "class"),
+            ("App.IUserService", "IUserService", "interface"),
+            ("App.UserService", "UserService", "class"),
+            ("App.BaseController", "BaseController", "class"),
+            ("App.UserController", "UserController", "class"),
+        ]
+        conn.executemany(
+            "INSERT INTO types (full_name, name, kind) VALUES (?,?,?)", types
+        )
+        # (from, to, ingest-time guess) — guess is the spelling heuristic.
+        rels = [
+            ("App.Account", "App.IdentityBase", "implements"),   # WRONG guess (class)
+            ("App.UserService", "App.IUserService", "implements"),  # correct (interface)
+            ("App.UserController", "App.BaseController", "inherits"),  # correct (class)
+            ("App.Account", "IDisposable", "implements"),        # external iface — keep
+            ("App.UserController", "Page", "inherits"),          # external class — keep
+        ]
+        conn.executemany(
+            "INSERT INTO relationships (from_type, to_type, kind) VALUES (?,?,?)", rels
+        )
+        conn.commit()
+
+        _fix_relationship_kinds(conn)
+
+        def kind_of(to_type):
+            return conn.execute(
+                "SELECT kind FROM relationships WHERE to_type=?", (to_type,)
+            ).fetchone()["kind"]
+
+        assert kind_of("App.IdentityBase") == "inherits"   # corrected: it's a class
+        assert kind_of("App.IUserService") == "implements"  # unchanged: interface
+        assert kind_of("App.BaseController") == "inherits"  # unchanged: class
+        assert kind_of("IDisposable") == "implements"       # external: guess kept
+        assert kind_of("Page") == "inherits"                # external: guess kept
+        conn.close()
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 # ── 11. REST API ───────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")

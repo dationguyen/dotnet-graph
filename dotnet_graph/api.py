@@ -268,6 +268,8 @@ def get_stats():
 
 def create_app(db_path: Path) -> FastAPI:
     """Create and return the FastAPI application bound to the given database."""
+    from dotnet_graph import __version__
+
     _set_db(db_path)
     app = FastAPI(
         title="dotnet-graph",
@@ -277,7 +279,7 @@ def create_app(db_path: Path) -> FastAPI:
             "HTTP endpoints, constructor injections, and method call graphs. "
             "See `/docs` for the interactive OpenAPI explorer."
         ),
-        version="0.1.0",
+        version=__version__,
     )
     app.include_router(router)
     return app

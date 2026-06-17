@@ -186,6 +186,8 @@ def _ingest_roslyn(
             rows.append((t["line"], type_id, full_name))
 
             for base in t.get("bases", []):
+                # Provisional guess from spelling; _fix_relationship_kinds corrects
+                # this against the target's real kind once all types are known.
                 kind = "implements" if base.startswith("I") and len(base) > 1 and base[1].isupper() else "inherits"
                 cur.execute(
                     "INSERT INTO relationships (from_type, to_type, kind) VALUES (?,?,?)",
@@ -399,6 +401,45 @@ def _resolve_relationships(conn: sqlite3.Connection, verbose: bool = False) -> N
         cur.executemany("UPDATE relationships SET to_type = ? WHERE id = ?", updates)
     if verbose:
         print(f"  Resolved {len(updates)} relationships.")
+
+
+def _fix_relationship_kinds(conn: sqlite3.Connection, verbose: bool = False) -> None:
+    """Correct the implements/inherits tag using the target's *actual* kind.
+
+    At ingest time the kind is a spelling guess (``I`` + uppercase → implements),
+    which mis-tags internal classes named like ``ItineraryBase`` or ``IdentityUser``.
+    Once every type is known we can look the target up: a base that resolves to an
+    interface is ``implements``, anything else is ``inherits``. External/unknown
+    bases (e.g. framework ``IDisposable``) keep the name-based guess, since we have
+    no kind for them and the I-prefix convention is the best signal available.
+    """
+    cur = conn.cursor()
+    kind_by_full: dict[str, str] = {}
+    short_kinds: dict[str, set[str]] = {}
+    for full_name, name, kind in cur.execute("SELECT full_name, name, kind FROM types"):
+        if full_name:
+            kind_by_full[full_name] = kind
+        short_kinds.setdefault(name, set()).add(kind)
+
+    def resolved_kind(to_type: str) -> str | None:
+        if to_type in kind_by_full:
+            return kind_by_full[to_type]
+        kinds = short_kinds.get(to_type.rsplit(".", 1)[-1])
+        return next(iter(kinds)) if kinds and len(kinds) == 1 else None
+
+    updates = []
+    for rel_id, to_type, kind in cur.execute("SELECT id, to_type, kind FROM relationships"):
+        target_kind = resolved_kind(to_type)
+        if target_kind is None:
+            continue  # external/ambiguous — keep the ingest-time guess
+        correct = "implements" if target_kind == "interface" else "inherits"
+        if correct != kind:
+            updates.append((correct, rel_id))
+
+    if updates:
+        cur.executemany("UPDATE relationships SET kind = ? WHERE id = ?", updates)
+    if verbose:
+        print(f"  Corrected {len(updates)} relationship kinds.")
 
 
 def _build_features(conn: sqlite3.Connection, verbose: bool = False) -> None:
@@ -624,6 +665,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             if verbose:
                 print("Resolving relationships...")
             _resolve_relationships(conn, verbose=verbose)
+            _fix_relationship_kinds(conn, verbose=verbose)
             _build_features(conn, verbose=verbose)
             conn.commit()
 
@@ -673,6 +715,7 @@ def build(root: Path, db_path: Path, verbose: bool = True, incremental: bool = T
             if verbose:
                 print("Resolving relationships...")
             _resolve_relationships(conn, verbose=verbose)
+            _fix_relationship_kinds(conn, verbose=verbose)
             if verbose:
                 print("Building features index...")
             _build_features(conn, verbose=verbose)
