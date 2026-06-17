@@ -154,3 +154,4 @@ Requires .NET SDK 8+ for the Roslyn analyzer.
 - [REST API](docs/rest-api.md)
 - [What gets indexed](docs/schema.md)
 - [Architecture & internals](docs/architecture.md)
+- [vs. LSP & ReSharper MCP](docs/comparison.md)
