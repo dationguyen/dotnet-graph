@@ -5,28 +5,57 @@ Roslyn language server, over LSP) or to JetBrains' ReSharper/Rider MCP server.
 They overlap in that all three can "answer questions about code," but they sit at
 very different points on the **precision ↔ cost ↔ portability** spectrum.
 
-## The one difference that drives everything: syntax vs. semantic
+## Same engine, different tier
 
-dotnet-graph runs a Roslyn **`CSharpSyntaxWalker`** — it parses the *syntax tree
-only* and never builds a `Compilation` or `SemanticModel`. It sees the text
-`: IUserService` and the string `_repo.Save()`, but it does not bind them to real
-symbols. As a result:
+A common assumption is that dotnet-graph and a C# language server are different
+*technologies*. They are not — **all of them are built on Roslyn.** OmniSharp and
+the newer Roslyn-based LSP server use Roslyn; ReSharper uses its own equivalent
+engine. dotnet-graph uses Roslyn too. The real difference is **which tier of
+Roslyn each one uses.**
 
-- **Type resolution is heuristic** — a name like `Foo` is matched to a full type
-  via a namespace/using/project scoring cascade, not by the compiler.
-- **The call graph is name-based** — `find_callers("Save")` matches *every*
-  `.Save()` in the codebase regardless of the receiver's type.
+Roslyn is layered:
 
-LSP and ReSharper both run the **full semantic engine**: real symbol binding,
-overload resolution, generic instantiation, exact inheritance graphs. When
-ReSharper says "12 usages of `Save`," it means *that exact symbol* — no false
-positives.
+1. **Syntax / parse layer** — `CSharpSyntaxTree.ParseText`, syntax trees,
+   `CSharpSyntaxWalker`. Pure parsing; no symbol resolution.
+2. **Semantic layer** — `Compilation`, `SemanticModel`, `ISymbol`,
+   `GetSymbolInfo`. Binds names to real symbols; needs the referenced
+   assemblies/metadata. *This is the tier a language server lives on.*
+3. **Workspace layer** — `MSBuildWorkspace`, `Solution`/`Project`/`Document`.
+   Loads `.sln`/`.csproj`, restores packages, tracks live edits.
 
-That is the core trade-off:
+**dotnet-graph stops at tier 1.** Its analyzer calls
+`CSharpSyntaxTree.ParseText(source)` per file and walks the tree with a
+`CSharpSyntaxWalker` — it never builds a `Compilation`, a `SemanticModel`, or an
+MSBuild workspace. It sees the text `: IUserService` and the string `_repo.Save()`
+but never binds them to symbols. **LSP and ReSharper use all three tiers**, which
+is what gives them symbol-exact navigation, refactoring, and diagnostics.
 
-- **dotnet-graph** — approximate on raw language facts, but cheap, portable, and
+### What that actually costs us — and what it doesn't
+
+Crucially, the line is *binding*, not *accuracy of parsing*:
+
+- **Parsing is ground-truth.** Because we reuse the compiler's own parser, our
+  *syntactic* facts — which types/methods/fields exist, their modifiers, line
+  numbers — are exactly as accurate as the compiler's. That part is genuinely
+  LSP-grade.
+- **Binding is heuristic.** With no cross-file `Compilation`, we don't know that
+  the `User` parsed in file A is the *same symbol* as a `User` referenced in file
+  B. We reconstruct that on the Python side via a namespace/using/project scoring
+  cascade (`_resolve_relationships`), and the call graph stays name-based — so
+  `find_callers("Save")` matches *every* `.Save()` regardless of receiver type. A
+  language server gets symbol identity for free, because every syntax tree shares
+  one `Compilation`'s symbol table.
+
+So dotnet-graph behaves like a sophisticated **structural/syntactic** analyzer,
+not a semantic one — same engine as an LSP, but only its *parser*, not its
+*binder*.
+
+The core trade-off:
+
+- **dotnet-graph** — approximate on cross-symbol facts, but cheap, portable, and
   rich in *derived* architectural knowledge.
-- **LSP / ReSharper** — exact, but heavy and coupled to a running server or IDE.
+- **LSP / ReSharper** — symbol-exact, but heavy and coupled to a running server
+  or IDE.
 
 ## At a glance
 
@@ -84,8 +113,11 @@ precisely*, and for dotnet-graph to *understand and navigate architecture* (and 
 give an agent durable cross-session memory).
 
 > **On precision:** the largest accuracy gap — name-only call matching and
-> heuristic type resolution — comes directly from the syntax-only design. An
-> opt-in semantic mode (building a `Compilation` + `SemanticModel`) would close
-> it, at the cost of requiring a restore/build and slower analysis. That is a
-> deliberate trade-off, not an oversight: syntax-only is what lets dotnet-graph
-> index broken, un-restored, or partially-written code in seconds.
+> heuristic type resolution — comes directly from stopping at Roslyn's syntax
+> tier. An opt-in semantic mode would simply **climb to tier 2** (build a
+> `Compilation` + `SemanticModel`) — the same Roslyn layer a language server uses
+> — making relationship and call resolution symbol-exact. The cost is exactly
+> what tier 1 buys us today: it would require a successful restore/build and run
+> much slower. That is a deliberate trade-off, not an oversight — syntax-only is
+> what lets dotnet-graph index broken, un-restored, or partially-written code in
+> seconds.
